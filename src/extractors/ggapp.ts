@@ -118,5 +118,47 @@ export async function extractGGAppData(username: string): Promise<Game[]> {
     }
   }
 
+  // Step 4: Fetch list memberships
+  logger.info('Fetching lists...');
+  try {
+    const listsData = await graphqlRequest(
+      `query lists($filter: ListFilter, $limit: Int) {
+        lists(filter: $filter, limit: $limit) {
+          id slug token gameCount
+        }
+      }`,
+      { filter: { userId }, limit: 100 },
+    );
+
+    const lists = (listsData as { lists: Array<{ id: number; slug: string; token: string; gameCount: number }> }).lists || [];
+    logger.info(`Found ${lists.length} lists`);
+
+    for (const list of lists) {
+      if (list.gameCount === 0) continue;
+      try {
+        const listGamesData = await graphqlRequest(
+          `query gamesForList($listId: ID!) {
+            gamesForList(listId: $listId) {
+              game { id name }
+            }
+          }`,
+          { listId: list.id },
+        );
+
+        const listGames = (listGamesData as { gamesForList: Array<{ game: { id: number; name: string } }> }).gamesForList || [];
+        for (const entry of listGames) {
+          const game = games.find((g) => g.gameId === entry.game.id);
+          if (game && !game.lists.includes(list.slug)) {
+            game.lists.push(list.slug);
+          }
+        }
+      } catch {
+        logger.warn(`Could not fetch games for list "${list.slug}"`);
+      }
+    }
+  } catch {
+    logger.warn('Could not fetch lists');
+  }
+
   return games;
 }
