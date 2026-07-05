@@ -1,59 +1,42 @@
-import { chromium } from 'playwright';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { sessionExists, saveSession } from '../utils/session.js';
-import { loginGGApp, navigateToGames, extractGGAppData } from '../extractors/ggapp.js';
+import { extractGGAppData } from '../extractors/ggapp.js';
 import * as logger from '../utils/logger.js';
 import { type GGAppData } from '../models/index.js';
-import { loadConfig } from '../utils/config.js';
 
 export async function extractCommand(options: {
-  throttle?: string;
-  headless?: boolean;
-  sessionDir?: string;
+  username: string;
   dataFile?: string;
-  config?: string;
 }) {
-  const config = loadConfig(options.config);
-  const headless = options.headless ?? config.headless ?? true;
-  const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as 'slow' | 'normal' | 'fast';
-  const sessionDir = options.sessionDir ?? config.sessionDir ?? 'sessions';
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
 
-  const browser = await chromium.launch({ headless });
-  const sessionPath = sessionExists('ggapp', sessionDir)
-    ? path.join(sessionDir, 'ggapp.json')
-    : undefined;
-  const context = await browser.newContext({ storageState: sessionPath });
+  logger.info(`Extracting data for GGApp user "${options.username}"...`);
+  const games = await extractGGAppData(options.username);
 
-  try {
-    const page = await context.newPage();
-
-    if (sessionPath) {
-      logger.info('Restored saved GGApp session');
-      await page.goto('https://ggapp.io', { waitUntil: 'networkidle' });
-    } else {
-      await loginGGApp(page);
-    }
-
-    await navigateToGames(page);
-    const games = await extractGGAppData(page, context, throttleSpeed);
-
-    await saveSession(context, 'ggapp', sessionDir);
-
-    const dir = path.dirname(dataFile);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    const data: GGAppData = {
-      exportedAt: new Date().toISOString(),
-      games,
-    };
-
-    fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
-    logger.success(`Data saved to ${dataFile}`);
-  } finally {
-    await browser.close();
+  const dir = path.dirname(dataFile);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
+
+  const data: GGAppData = {
+    exportedAt: new Date().toISOString(),
+    games,
+  };
+
+  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+  logger.success(`Data saved to ${dataFile}`);
+
+  // Summary
+  const byStatus = new Map<string, number>();
+  for (const game of games) {
+    byStatus.set(game.status, (byStatus.get(game.status) || 0) + 1);
+  }
+  logger.info('Summary:');
+  for (const [status, count] of byStatus) {
+    logger.info(`  ${status}: ${count}`);
+  }
+  const withRatings = games.filter((g) => g.rating).length;
+  const withReviews = games.filter((g) => g.review).length;
+  if (withRatings) logger.info(`  Ratings: ${withRatings}`);
+  if (withReviews) logger.info(`  Reviews: ${withReviews}`);
 }

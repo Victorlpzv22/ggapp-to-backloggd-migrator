@@ -1,12 +1,12 @@
 import { type GGAppStatus, type BackloggdStatus } from '../models/index.js';
 
 const DEFAULT_MAPPING: Record<GGAppStatus, BackloggdStatus> = {
-  jugando: 'playing',
-  completado: 'played',
-  abandonado: 'dropped',
-  pendiente: 'backlog',
-  'en pausa': 'paused',
-  deseado: 'wishlist',
+  'Want to Play': 'backlog',
+  Playing: 'playing',
+  Beaten: 'played',
+  Completed: 'played',
+  Shelved: 'paused',
+  Abandoned: 'dropped',
 };
 
 export function mapStatus(

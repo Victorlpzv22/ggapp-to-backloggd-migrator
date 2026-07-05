@@ -1,8 +1,8 @@
 import { chromium } from 'playwright';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { extractGGAppData } from '../extractors/ggapp.js';
 import { sessionExists, saveSession } from '../utils/session.js';
-import { loginGGApp, navigateToGames, extractGGAppData } from '../extractors/ggapp.js';
 import { loginBackloggd, importGames } from '../importers/backloggd.js';
 import * as logger from '../utils/logger.js';
 import { type GGAppData, type ConflictPolicy } from '../models/index.js';
@@ -11,6 +11,7 @@ import { loadConfig } from '../utils/config.js';
 const BACKLOGGD_BASE = 'https://backloggd.com';
 
 export async function migrateCommand(options: {
+  username: string;
   throttle?: string;
   headless?: boolean;
   sessionDir?: string;
@@ -27,42 +28,29 @@ export async function migrateCommand(options: {
   const conflictPolicy = (options.onConflict ?? config.defaultConflictPolicy ?? 'skip') as ConflictPolicy;
   const direct = options.direct ?? false;
 
+  // --- Phase 1: Extract (API-based, no Playwright) ---
+  logger.info(`Extracting data for GGApp user "${options.username}"...`);
+  const games = await extractGGAppData(options.username);
+
+  if (!direct) {
+    const dir = path.dirname(dataFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const data: GGAppData = { exportedAt: new Date().toISOString(), games };
+    fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+    logger.success(`Data saved to ${dataFile}`);
+  }
+
+  // --- Phase 2: Import (Playwright for Backloggd) ---
   const browser = await chromium.launch({ headless });
-  const ggappSessionPath = sessionExists('ggapp', sessionDir)
-    ? path.join(sessionDir, 'ggapp.json')
+  const backloggdSessionPath = sessionExists('backloggd', sessionDir)
+    ? path.join(sessionDir, 'backloggd.json')
     : undefined;
-  const context = await browser.newContext({ storageState: ggappSessionPath });
+  const context = await browser.newContext({ storageState: backloggdSessionPath });
 
   try {
-    // --- Phase 1: Extract ---
-    let games: GGAppData['games'];
     const page = await context.newPage();
-
-    if (ggappSessionPath) {
-      logger.info('Restored saved GGApp session');
-      await page.goto('https://ggapp.io', { waitUntil: 'networkidle' });
-    } else {
-      await loginGGApp(page);
-    }
-
-    await navigateToGames(page);
-    games = await extractGGAppData(page, context, throttleSpeed);
-    await saveSession(context, 'ggapp', sessionDir);
-
-    if (!direct) {
-      const dir = path.dirname(dataFile);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      const data: GGAppData = { exportedAt: new Date().toISOString(), games };
-      fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
-      logger.success(`Data saved to ${dataFile}`);
-    }
-
-    // --- Phase 2: Import (reuse same context) ---
-    const backloggdSessionPath = sessionExists('backloggd', sessionDir)
-      ? path.join(sessionDir, 'backloggd.json')
-      : undefined;
 
     if (backloggdSessionPath) {
       logger.info('Restored saved Backloggd session');

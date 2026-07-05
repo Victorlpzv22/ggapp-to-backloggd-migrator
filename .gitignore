@@ -1,4 +1,6 @@
 docs/superpowers/
+.opencode/
+opencode.json
 node_modules/
 data/
 sessions/

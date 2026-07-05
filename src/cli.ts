@@ -13,18 +13,12 @@ program
 program
   .command('extract')
   .description('Extract game data from GGApp to a JSON file')
-  .option('--headless <bool>', 'Run browser without UI', 'true')
-  .option('--throttle <speed>', 'slow|normal|fast', 'normal')
-  .option('--session-dir <dir>', 'Session directory', 'sessions')
+  .argument('<username>', 'GGApp username')
   .option('--data-file <path>', 'Output JSON file', 'data/ggapp-data.json')
-  .option('--config <path>', 'Config file path')
-  .action(async (opts) => {
+  .action(async (username, opts) => {
     await extractCommand({
-      throttle: opts.throttle,
-      headless: opts.headless === 'true',
-      sessionDir: opts.sessionDir,
+      username,
       dataFile: opts.dataFile,
-      config: opts.config,
     });
   });
 
@@ -51,6 +45,7 @@ program
 program
   .command('migrate')
   .description('Extract and import in one go')
+  .argument('<username>', 'GGApp username')
   .option('--headless <bool>', 'Run browser without UI', 'true')
   .option('--throttle <speed>', 'slow|normal|fast', 'normal')
   .option('--session-dir <dir>', 'Session directory', 'sessions')
@@ -58,8 +53,9 @@ program
   .option('--config <path>', 'Config file path')
   .option('--on-conflict <policy>', 'skip|merge|overwrite|ask', 'skip')
   .option('--direct', 'Skip writing intermediate JSON file')
-  .action(async (opts) => {
+  .action(async (username, opts) => {
     await migrateCommand({
+      username,
       throttle: opts.throttle,
       headless: opts.headless === 'true',
       sessionDir: opts.sessionDir,

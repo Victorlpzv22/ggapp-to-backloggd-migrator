@@ -4,7 +4,7 @@ import { loadConfig } from './config';
 
 describe('loadConfig', () => {
   const testConfig = {
-    stateMapping: { completado: 'playing' },
+    stateMapping: { Completed: 'playing' },
     headless: true,
   };
 
@@ -20,7 +20,7 @@ describe('loadConfig', () => {
 
   it('should load config from file', () => {
     const config = loadConfig('test-config.json');
-    expect(config.stateMapping?.completado).toBe('playing');
+    expect(config.stateMapping?.Completed).toBe('playing');
     expect(config.headless).toBe(true);
   });
 

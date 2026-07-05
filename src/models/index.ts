@@ -1,10 +1,10 @@
 export type GGAppStatus =
-  | 'jugando'
-  | 'completado'
-  | 'abandonado'
-  | 'pendiente'
-  | 'en pausa'
-  | 'deseado';
+  | 'Want to Play'
+  | 'Playing'
+  | 'Beaten'
+  | 'Completed'
+  | 'Shelved'
+  | 'Abandoned';
 
 export type BackloggdStatus =
   | 'playing'
@@ -24,6 +24,10 @@ export interface Game {
   rating?: number;
   review?: string;
   lists: string[];
+  /** GGApp internal game ID */
+  gameId?: number;
+  /** GGApp game token */
+  token?: string;
 }
 
 export interface GGAppData {

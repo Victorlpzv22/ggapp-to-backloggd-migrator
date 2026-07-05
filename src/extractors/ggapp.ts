@@ -1,73 +1,122 @@
-import { type Page, type BrowserContext } from 'playwright';
 import { type Game, type GGAppStatus } from '../models/index.js';
 import * as logger from '../utils/logger.js';
-import { wait } from '../utils/throttle.js';
 
-export async function extractGGAppData(
-  page: Page,
-  context: BrowserContext,
-  throttleSpeed: 'slow' | 'normal' | 'fast',
-): Promise<Game[]> {
-  const games: Game[] = [];
-  let currentPage = 1;
-  let hasNextPage = true;
+const API_URL = 'https://api.ggapp.io/';
 
-  while (hasNextPage) {
-    logger.info(`Scraping page ${currentPage}...`);
-    await wait(throttleSpeed);
+interface GraphQLResponse {
+  data: Record<string, unknown>;
+  errors?: Array<{ message: string }>;
+}
 
-    const pageGames = await parseGameList(page);
-    games.push(...pageGames);
-
-    hasNextPage = await goToNextPage(page);
-    currentPage++;
+export class GGAppAPIError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GGAppAPIError';
   }
-
-  logger.success(`Extracted ${games.length} games total`);
-  return games;
 }
 
-export async function loginGGApp(page: Page): Promise<void> {
-  await page.goto('https://ggapp.io/login', { waitUntil: 'networkidle' });
-  logger.info('Please log in to GGApp in the browser window.');
-  logger.info('Waiting for login to complete...');
-
-  await page.waitForURL('https://ggapp.io/**', { timeout: 0 });
-  logger.success('GGApp login detected');
-}
-
-export async function navigateToGames(page: Page): Promise<void> {
-  await page.goto('https://ggapp.io/games', { waitUntil: 'networkidle' });
-  logger.info('Navigated to games page');
-}
-
-async function parseGameList(page: Page): Promise<Game[]> {
-  return page.evaluate(() => {
-    const items = document.querySelectorAll('[data-game-card]');
-    return Array.from(items).map((el) => {
-      const titleEl = el.querySelector('[data-game-title]');
-      const statusEl = el.querySelector('[data-game-status]');
-      const ratingEl = el.querySelector('[data-game-rating]');
-      const reviewEl = el.querySelector('[data-game-review]');
-      const listEls = el.querySelectorAll('[data-game-list]');
-
-      return {
-        title: titleEl?.textContent?.trim() ?? '',
-        status: (statusEl?.textContent?.trim() ?? 'pendiente') as GGAppStatus,
-        rating: ratingEl ? parseFloat(ratingEl.textContent?.trim() ?? '') : undefined,
-        review: reviewEl?.textContent?.trim() || undefined,
-        lists: Array.from(listEls).map((l) => l.textContent?.trim() ?? ''),
-      };
-    });
+async function graphqlRequest(
+  query: string,
+  variables: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
   });
+
+  if (!response.ok) {
+    throw new GGAppAPIError(`API error: ${response.status} ${response.statusText}`);
+  }
+
+  const result = (await response.json()) as GraphQLResponse;
+
+  if (result.errors) {
+    throw new GGAppAPIError(
+      `GraphQL error: ${result.errors.map((e) => e.message).join(', ')}`,
+    );
+  }
+
+  return result.data;
 }
 
-async function goToNextPage(page: Page): Promise<boolean> {
-  const nextButton = page.locator('[data-pagination-next]');
-  if (await nextButton.isVisible()) {
-    await nextButton.click();
-    await page.waitForLoadState('networkidle');
-    return true;
+/**
+ * Fetch all games from GGApp using the public GraphQL API.
+ * No authentication needed — profile data is public.
+ */
+export async function extractGGAppData(username: string): Promise<Game[]> {
+  // Step 1: Get user ID
+  logger.info(`Fetching user info for "${username}"...`);
+  const userData = await graphqlRequest(
+    `query getUser($username: String) {
+      getUser(username: $username) { id username }
+    }`,
+    { username },
+  );
+
+  const user = (userData as { getUser: { id: number; username: string } }).getUser;
+  if (!user) {
+    throw new GGAppAPIError(`User "${username}" not found`);
   }
-  return false;
+  const userId = user.id;
+  logger.info(`User ID: ${userId}`);
+
+  // Step 2: Get all games with their statuses
+  logger.info('Fetching games...');
+  const statusIds = [1, 2, 3, 4, 5, 6];
+  const gamesData = await graphqlRequest(
+    `query listGamesForStatuses($statusIds: [ID], $userId: ID, $limit: Int) {
+      listGamesForStatuses(statusIds: $statusIds, userId: $userId, limit: $limit) {
+        game { id name slug token }
+        playStatus { id title }
+      }
+    }`,
+    { statusIds, userId, limit: 1000 },
+  );
+
+  const entries = (gamesData as { listGamesForStatuses: Array<{ game: { id: number; name: string; slug: string; token: string }; playStatus: { id: number; title: string } }> }).listGamesForStatuses || [];
+
+  const games: Game[] = entries.map((entry) => ({
+    title: entry.game.name,
+    status: entry.playStatus.title as GGAppStatus,
+    rating: undefined,
+    review: undefined,
+    lists: [],
+    gameId: entry.game.id,
+    token: entry.game.token,
+  }));
+
+  logger.success(`Found ${games.length} games`);
+
+  // Step 3: Fetch reviews and ratings
+  if (games.length > 0) {
+    logger.info('Fetching reviews...');
+    try {
+      const reviewsData = await graphqlRequest(
+        `query reviews($filter: ReviewFilter, $limit: Int) {
+          reviews(filter: $filter, limit: $limit) {
+            ratingValue
+            body
+            game { id name }
+          }
+        }`,
+        { filter: { userId }, limit: 1000 },
+      );
+
+      const reviews = (reviewsData as { reviews: Array<{ ratingValue: number | null; body: string | null; game: { id: number; name: string } }> }).reviews || [];
+
+      for (const review of reviews) {
+        const game = games.find((g) => g.gameId === review.game.id);
+        if (game) {
+          if (review.ratingValue) game.rating = review.ratingValue;
+          if (review.body) game.review = review.body;
+        }
+      }
+      logger.info(`Found ${reviews.length} reviews`);
+    } catch (err) {
+      logger.warn(`Could not fetch reviews: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return games;
 }
