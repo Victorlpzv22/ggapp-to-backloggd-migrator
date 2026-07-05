@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "login": "tsx src/cli.ts login",
     "extract": "tsx src/cli.ts extract",
     "import": "tsx src/cli.ts import",
     "migrate": "tsx src/cli.ts migrate",

@@ -1,7 +1,10 @@
+import { chromium } from 'playwright';
 import { type Game, type GGAppStatus } from '../models/index.js';
 import * as logger from '../utils/logger.js';
+import { saveSession, sessionExists } from '../utils/session.js';
 
 const API_URL = 'https://api.ggapp.io/';
+const SITE_NAME = 'ggapp';
 
 interface GraphQLResponse {
   data: Record<string, unknown>;
@@ -40,11 +43,119 @@ async function graphqlRequest(
   return result.data;
 }
 
+/** Login to GGApp via visible browser and save session */
+export async function loginGGApp(): Promise<void> {
+  const browser = await chromium.launch({ headless: false, args: ['--no-sandbox'] });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  await page.goto('https://ggapp.io/', { waitUntil: 'networkidle' });
+  logger.info('Please log in to GGApp in the browser window.');
+
+  const loginBtn = page.getByText('Login').first();
+  await loginBtn.click();
+  await page.waitForTimeout(500);
+
+  logger.info('Waiting for login to complete...');
+  logger.info('Enter your credentials in the modal and click "Log in"');
+
+  await page.waitForFunction(
+    () => window.location.pathname !== '/' && window.location.pathname !== '/login',
+    { timeout: 0 },
+  );
+  await page.waitForTimeout(2000);
+  logger.success(`GGApp login detected — logged in as ${page.url().replace('https://ggapp.io/', '')}`);
+
+  await saveSession(context, SITE_NAME);
+  logger.success('Session saved');
+
+  await browser.close();
+}
+
+/** Get wishlist game IDs from authenticated session */
+async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<number, string>> {
+  if (!sessionExists(SITE_NAME)) {
+    logger.warn('No saved GGApp session found. Run login first with: npm run login');
+    return new Map();
+  }
+
+  const browser = await chromium.launch({ headless, args: ['--no-sandbox'] });
+  const context = await browser.newContext({ storageState: `sessions/${SITE_NAME}.json` });
+  const page = await context.newPage();
+
+  try {
+    await page.goto('https://ggapp.io/', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
+
+    const result = await page.evaluate(async (uid: number) => {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        return { error: 'No auth token in localStorage' };
+      }
+
+      // First get total count
+      const countResp = await fetch('https://api.ggapp.io/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          query: `query wishlistGamesCount($userId: Int) { wishlistGamesCount(userId: $userId) }`,
+          variables: { userId: uid },
+        }),
+      });
+      const countData = await countResp.json() as { data?: { wishlistGamesCount: number } };
+      const total = countData?.data?.wishlistGamesCount || 0;
+
+      // Fetch all wishlist games (max 1000)
+      const resp = await fetch('https://api.ggapp.io/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          query: `query wishlistGames($filter: WishlistFilter, $order: WishlistOrder, $limit: Int, $offset: Int) {
+            wishlistGames(filter: $filter, order: $order, limit: $limit, offset: $offset) {
+              game { id name }
+            }
+          }`,
+          variables: {
+            filter: { platforms: [], userId: uid },
+            order: { direction: 'ASC', field: 'GAME_NAME' },
+            limit: 1000,
+            offset: 0,
+          },
+        }),
+      });
+      const data = await resp.json() as { data?: { wishlistGames?: Array<{ game: { id: number; name: string } }> } };
+      const games = data?.data?.wishlistGames || [];
+      return {
+        total,
+        games: games.map((wg) => ({ id: wg.game.id, name: wg.game.name })),
+      };
+    }, userId);
+
+    if ((result as any).error) {
+      logger.warn(`Wishlist auth error: ${(result as any).error}`);
+      return new Map();
+    }
+
+    const { total, games } = result as { total: number; games: Array<{ id: number; name: string }> };
+    logger.success(`Wishlist: ${games.length} of ${total} games fetched via session`);
+    return new Map(games.map((g) => [g.id, g.name]));
+  } catch (err) {
+    logger.warn(`Could not fetch wishlist: ${err instanceof Error ? err.message : String(err)}`);
+    return new Map();
+  } finally {
+    await browser.close();
+  }
+}
+
 /**
  * Fetch all games from GGApp using the public GraphQL API.
  * No authentication needed — profile data is public.
+ * If saved session exists, also merges authenticated wishlist data.
  */
-export async function extractGGAppData(username: string): Promise<Game[]> {
+export async function extractGGAppData(
+  username: string,
+  headless = true,
+): Promise<Game[]> {
   // Step 1: Get user ID
   logger.info(`Fetching user info for "${username}"...`);
   const userData = await graphqlRequest(
@@ -61,7 +172,7 @@ export async function extractGGAppData(username: string): Promise<Game[]> {
   const userId = user.id;
   logger.info(`User ID: ${userId}`);
 
-  // Step 2: Get all games with their statuses
+  // Step 2: Get games by play status
   logger.info('Fetching games...');
   const statusIds = [1, 2, 3, 4, 5, 6];
   const gamesData = await graphqlRequest(
@@ -88,7 +199,7 @@ export async function extractGGAppData(username: string): Promise<Game[]> {
 
   logger.success(`Found ${games.length} games with a play status`);
 
-  // Step 3: Fetch games without a play status (DEFAULT / Wishlist)
+  // Step 3: Fetch games without a play status (collection 0 / DEFAULT)
   logger.info('Fetching unstatused games...');
   try {
     const unstatusedData = await graphqlRequest(
@@ -121,9 +232,32 @@ export async function extractGGAppData(username: string): Promise<Game[]> {
     logger.warn(`Could not fetch unstatused games: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // Step 4: Cross-reference with authenticated wishlist (if session exists)
+  const wishlistGames = await fetchWishlistIds(userId, headless);
+  if (wishlistGames.size > 0) {
+    let added = 0;
+    for (const [id, name] of wishlistGames) {
+      if (!games.some((g) => g.gameId === id)) {
+        games.push({
+          title: name,
+          status: 'Wishlist' as GGAppStatus,
+          rating: undefined,
+          review: undefined,
+          lists: [],
+          gameId: id,
+          token: undefined,
+        });
+        added++;
+      }
+    }
+    if (added > 0) {
+      logger.info(`Added ${added} wishlist games not previously extracted`);
+    }
+  }
+
   logger.info(`Total games: ${games.length}`);
 
-  // Step 4: Fetch reviews and ratings
+  // Step 5: Fetch reviews and ratings
   if (games.length > 0) {
     logger.info('Fetching reviews...');
     try {
@@ -153,7 +287,7 @@ export async function extractGGAppData(username: string): Promise<Game[]> {
     }
   }
 
-  // Step 4: Fetch list memberships
+  // Step 6: Fetch list memberships
   logger.info('Fetching lists...');
   try {
     const listsData = await graphqlRequest(

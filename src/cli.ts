@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { extractCommand } from './commands/extract.js';
 import { importCommand } from './commands/import.js';
 import { migrateCommand } from './commands/migrate.js';
+import { loginGGApp } from './extractors/ggapp.js';
 
 const program = new Command();
 
@@ -11,14 +12,23 @@ program
   .version('1.0.0');
 
 program
+  .command('login')
+  .description('Log in to GGApp to enable wishlist extraction')
+  .action(async () => {
+    await loginGGApp();
+  });
+
+program
   .command('extract')
   .description('Extract game data from GGApp to a JSON file')
   .argument('<username>', 'GGApp username')
   .option('--data-file <path>', 'Output JSON file', 'data/ggapp-data.json')
+  .option('--ggapp-headless <bool>', 'Run GGApp browser without UI for wishlist', 'true')
   .action(async (username, opts) => {
     await extractCommand({
       username,
       dataFile: opts.dataFile,
+      ggappHeadless: opts.ggappHeadless === 'true',
     });
   });
 

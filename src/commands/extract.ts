@@ -7,11 +7,12 @@ import { type GGAppData } from '../models/index.js';
 export async function extractCommand(options: {
   username: string;
   dataFile?: string;
+  ggappHeadless?: boolean;
 }) {
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
 
   logger.info(`Extracting data for GGApp user "${options.username}"...`);
-  const games = await extractGGAppData(options.username);
+  const games = await extractGGAppData(options.username, options.ggappHeadless ?? true);
 
   const dir = path.dirname(dataFile);
   if (!fs.existsSync(dir)) {
