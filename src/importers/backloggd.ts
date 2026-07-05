@@ -408,24 +408,50 @@ async function getUsername(page: Page): Promise<string> {
   });
 }
 
-async function fetchExistingListSlugs(page: Page, username: string): Promise<Map<string, string>> {
-  await page.goto(`${BACKLOGGD_BASE}/u/${username}/lists/`, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1000);
+async function fetchExistingListSlugs(page: Page, gameSlug: string, gameTitle: string): Promise<Map<string, string>> {
+  const listsUrl = `${BACKLOGGD_BASE}/games/${gameSlug}/`;
+  await navigateToGamePage(page, listsUrl);
+
+  if (await page.title() === 'Game not found') {
+    const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(gameTitle)}`;
+    await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    const link = await findExactGameLink(page, gameTitle);
+    if (!link) return new Map();
+    await navigateToGamePage(page, link);
+  }
+
+  await page.evaluate(() => {
+    const btn = document.querySelector<HTMLElement>('#add-to-list');
+    btn?.click();
+  });
+  const modalReady = await page.waitForSelector('#list-container', { state: 'attached', timeout: 5000 }).catch(() => null);
+  if (!modalReady) return new Map();
 
   const raw = await page.evaluate(() => {
-    const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="/list/"]');
+    const container = document.getElementById('list-container');
+    if (!container) return [];
+    const items = container.querySelectorAll<HTMLInputElement>('input.list-checkbox');
     const results: Array<[string, string]> = [];
     const seen = new Set<string>();
-    for (const link of links) {
-      const slug = link.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
+    for (const cb of items) {
+      const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
+      if (!label) continue;
+      const link = label.querySelector<HTMLAnchorElement>('a[href*="/list/"]');
+      const slug = link?.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
       if (!slug || seen.has(slug)) continue;
       seen.add(slug);
-      const entry = link.closest<HTMLElement>('[class*="list-entry"], [class*="list"]');
-      const title = entry?.querySelector<HTMLElement>('[class*="title"]')?.textContent?.trim() || slug;
+      const title = label.querySelector<HTMLElement>('[class*="title"]')?.textContent?.trim() || slug;
       results.push([title, slug]);
     }
     return results;
   });
+
+  await page.evaluate(() => {
+    const close = document.querySelector<HTMLElement>('[data-micromodal-close]');
+    close?.click();
+  });
+  await page.waitForTimeout(500);
 
   const map = new Map<string, string>();
   for (const [title, slug] of raw) {
@@ -465,7 +491,8 @@ async function ensureListsExist(page: Page, username: string, games: Game[]): Pr
 
   logger.info(`Ensuring ${allGGAppListNames.length} lists exist on Backloggd...`);
 
-  const existingLists = await fetchExistingListSlugs(page, username);
+  const firstGame = games.find(g => g.slug) || games[0];
+  const existingLists = await fetchExistingListSlugs(page, firstGame.slug || firstGame.title, firstGame.title);
   const mapping = new Map<string, string>();
 
   for (const ggappName of allGGAppListNames) {
