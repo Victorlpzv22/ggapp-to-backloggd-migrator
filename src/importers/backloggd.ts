@@ -193,9 +193,10 @@ async function syncGameLists(
   }
 }
 
-function promptConflictAction(title: string): Promise<'skip' | 'update'> {
+async function promptConflictAction(title: string): Promise<'skip' | 'update'> {
+  const { createInterface } = await import('node:readline');
   return new Promise((resolve) => {
-    const rl = require('node:readline').createInterface({
+    const rl = createInterface({
       input: process.stdin,
       output: process.stdout,
     });
