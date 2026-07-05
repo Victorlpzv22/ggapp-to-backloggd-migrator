@@ -18,7 +18,6 @@ export async function importCommand(options: {
   onConflict?: string;
 }) {
   const config = loadConfig(options.config);
-  const headless = options.headless ?? config.headless ?? true;
   const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as 'slow' | 'normal' | 'fast';
   const sessionDir = options.sessionDir ?? config.sessionDir ?? 'sessions';
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
@@ -33,10 +32,14 @@ export async function importCommand(options: {
   const data: GGAppData = JSON.parse(raw);
   logger.info(`Loaded ${data.games.length} games from ${dataFile}`);
 
-  const browser = await chromium.launch({ headless });
   const sessionPath = sessionExists('backloggd', sessionDir)
     ? path.join(sessionDir, 'backloggd.json')
     : undefined;
+
+  // Force visible browser for login if no session exists
+  const headless = sessionPath ? (options.headless ?? config.headless ?? true) : false;
+
+  const browser = await chromium.launch({ headless });
   const context = await browser.newContext({ storageState: sessionPath });
 
   try {
@@ -44,9 +47,12 @@ export async function importCommand(options: {
 
     if (sessionPath) {
       logger.info('Restored saved Backloggd session');
-      await page.goto(BACKLOGGD_BASE, { waitUntil: 'networkidle' });
+      await page.goto(BACKLOGGD_BASE, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
     } else {
       await loginBackloggd(page);
+      // Save session immediately so later runs are headless
+      await saveSession(context, 'backloggd', sessionDir);
+      logger.success('Backloggd session saved');
     }
 
     const report = await importGames(page, context, data.games, {

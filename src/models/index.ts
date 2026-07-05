@@ -29,6 +29,8 @@ export interface Game {
   gameId?: number;
   /** GGApp game token */
   token?: string;
+  /** IGDB slug (shared between GGApp and Backloggd) */
+  slug?: string;
 }
 
 export interface GGAppData {

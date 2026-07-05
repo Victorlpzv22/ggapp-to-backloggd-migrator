@@ -45,12 +45,17 @@ export async function importGames(
     try {
       await wait(options.throttleSpeed);
 
-      const searchUrl = `${BACKLOGGD_BASE}/games?search=${encodeURIComponent(game.title)}`;
-      await page.goto(searchUrl, { waitUntil: 'networkidle' });
+      // Navigate directly via slug if available, otherwise search
+      let gameUrl: string | null = null;
+      if (game.slug) {
+        gameUrl = `${BACKLOGGD_BASE}/games/${game.slug}/`;
+      } else {
+        const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(game.title)}`;
+        await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+        gameUrl = await findExactGameLink(page, game.title);
+      }
 
-      const gameFound = await findExactGameLink(page, game.title);
-
-      if (!gameFound) {
+      if (!gameUrl) {
         logger.warn(`Not found: ${game.title}`);
         report.notFound++;
         report.notFoundGames.push({
@@ -61,7 +66,7 @@ export async function importGames(
         continue;
       }
 
-      await page.goto(gameFound, { waitUntil: 'networkidle' });
+      await navigateToGamePage(page, gameUrl);
       await wait(options.throttleSpeed);
 
       const backloggdStatus = mapStatus(game.status, options.stateMapping);
@@ -111,12 +116,23 @@ export async function importGames(
   return report;
 }
 
+async function navigateToGamePage(page: Page, url: string): Promise<void> {
+  try {
+    await page.goto(url, { waitUntil: 'load', timeout: 15000 });
+  } catch {
+    // Retry with domcontentloaded if load times out
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+  }
+  await page.waitForTimeout(1000);
+}
+
 async function findExactGameLink(page: Page, title: string): Promise<string | null> {
   return page.evaluate((searchTitle) => {
     const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="/games/"]');
+    const lowerTitle = searchTitle.toLowerCase();
     for (const link of links) {
       const text = link.textContent?.trim() ?? '';
-      if (text.toLowerCase() === searchTitle.toLowerCase()) {
+      if (text.toLowerCase().startsWith(lowerTitle)) {
         return link.href;
       }
     }
