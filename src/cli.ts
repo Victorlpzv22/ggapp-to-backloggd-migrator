@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { extractCommand } from './commands/extract.js';
 
 const program = new Command();
 
@@ -10,8 +11,19 @@ program
 program
   .command('extract')
   .description('Extract game data from GGApp to a JSON file')
-  .action(() => {
-    console.log('extract command - not implemented yet');
+  .option('--headless <bool>', 'Run browser without UI', 'true')
+  .option('--throttle <speed>', 'slow|normal|fast', 'normal')
+  .option('--session-dir <dir>', 'Session directory', 'sessions')
+  .option('--data-file <path>', 'Output JSON file', 'data/ggapp-data.json')
+  .option('--config <path>', 'Config file path')
+  .action(async (opts) => {
+    await extractCommand({
+      throttle: opts.throttle,
+      headless: opts.headless === 'true',
+      sessionDir: opts.sessionDir,
+      dataFile: opts.dataFile,
+      config: opts.config,
+    });
   });
 
 program
