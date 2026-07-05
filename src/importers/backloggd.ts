@@ -308,10 +308,13 @@ async function syncGameLists(
     await page.evaluate((name: string) => {
       const container = document.getElementById('list-container');
       if (!container) return;
-      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-      for (const cb of checkboxes) {
+      const items = container.querySelectorAll<HTMLInputElement>('input.list-checkbox');
+      for (const cb of items) {
         const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
-        if (label && label.textContent?.trim() === name) {
+        if (!label) continue;
+        const link = label.querySelector<HTMLAnchorElement>('a[href*="/list/"]');
+        const slug = link?.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
+        if (slug === name) {
           cb.checked = true;
           return;
         }
