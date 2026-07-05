@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { extractCommand } from './commands/extract.js';
 import { importCommand } from './commands/import.js';
+import { migrateCommand } from './commands/migrate.js';
 
 const program = new Command();
 
@@ -50,10 +51,23 @@ program
 program
   .command('migrate')
   .description('Extract and import in one go')
-  .option('--direct', 'Skip writing intermediate JSON file')
+  .option('--headless <bool>', 'Run browser without UI', 'true')
+  .option('--throttle <speed>', 'slow|normal|fast', 'normal')
+  .option('--session-dir <dir>', 'Session directory', 'sessions')
+  .option('--data-file <path>', 'Output/Input JSON file', 'data/ggapp-data.json')
+  .option('--config <path>', 'Config file path')
   .option('--on-conflict <policy>', 'skip|merge|overwrite|ask', 'skip')
-  .action(() => {
-    console.log('migrate command - not implemented yet');
+  .option('--direct', 'Skip writing intermediate JSON file')
+  .action(async (opts) => {
+    await migrateCommand({
+      throttle: opts.throttle,
+      headless: opts.headless === 'true',
+      sessionDir: opts.sessionDir,
+      dataFile: opts.dataFile,
+      config: opts.config,
+      onConflict: opts.onConflict,
+      direct: opts.direct,
+    });
   });
 
 program.parse(process.argv);
