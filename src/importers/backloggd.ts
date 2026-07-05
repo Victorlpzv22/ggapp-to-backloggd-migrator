@@ -11,7 +11,11 @@ export async function loginBackloggd(page: Page): Promise<void> {
   logger.info('Please log in to Backloggd in the browser window.');
   logger.info('Waiting for login to complete...');
 
-  await page.waitForURL(`${BACKLOGGD_BASE}/**`, { timeout: 0 });
+  await page.waitForFunction(
+    () => !window.location.pathname.startsWith('/login'),
+    { timeout: 0 },
+  );
+  await page.waitForTimeout(2000);
   logger.success('Backloggd login detected');
 }
 
