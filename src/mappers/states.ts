@@ -7,6 +7,7 @@ const DEFAULT_MAPPING: Record<GGAppStatus, BackloggdStatus> = {
   Completed: 'played',
   Shelved: 'paused',
   Abandoned: 'dropped',
+  Wishlist: 'backlog',
 };
 
 export function mapStatus(

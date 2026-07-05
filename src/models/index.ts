@@ -4,7 +4,8 @@ export type GGAppStatus =
   | 'Beaten'
   | 'Completed'
   | 'Shelved'
-  | 'Abandoned';
+  | 'Abandoned'
+  | 'Wishlist';
 
 export type BackloggdStatus =
   | 'playing'

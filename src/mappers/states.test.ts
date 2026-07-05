@@ -26,6 +26,10 @@ describe('mapStatus', () => {
     expect(mapStatus('Abandoned')).toBe('dropped');
   });
 
+  it('should map Wishlist to backlog (merged with Want to Play)', () => {
+    expect(mapStatus('Wishlist')).toBe('backlog');
+  });
+
   it('should use custom mapping when provided', () => {
     const customMapping = { Completed: 'backlog' as const };
     expect(mapStatus('Completed', customMapping)).toBe('backlog');

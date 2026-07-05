@@ -86,9 +86,44 @@ export async function extractGGAppData(username: string): Promise<Game[]> {
     token: entry.game.token,
   }));
 
-  logger.success(`Found ${games.length} games`);
+  logger.success(`Found ${games.length} games with a play status`);
 
-  // Step 3: Fetch reviews and ratings
+  // Step 3: Fetch games without a play status (DEFAULT / Wishlist)
+  logger.info('Fetching unstatused games...');
+  try {
+    const unstatusedData = await graphqlRequest(
+      `query listGamesForStatuses($statusIds: [ID], $userId: ID, $limit: Int) {
+        listGamesForStatuses(statusIds: $statusIds, userId: $userId, limit: $limit) {
+          game { id name slug token }
+          playStatus { id title }
+        }
+      }`,
+      { statusIds: [0], userId, limit: 1000 },
+    );
+
+    const unstatusedEntries = (unstatusedData as { listGamesForStatuses: Array<{ game: { id: number; name: string; slug: string; token: string }; playStatus: { id: number; title: string } }> }).listGamesForStatuses || [];
+
+    for (const entry of unstatusedEntries) {
+      if (!games.some((g) => g.gameId === entry.game.id)) {
+        games.push({
+          title: entry.game.name,
+          status: 'Wishlist' as GGAppStatus,
+          rating: undefined,
+          review: undefined,
+          lists: [],
+          gameId: entry.game.id,
+          token: entry.game.token,
+        });
+      }
+    }
+    logger.success(`Found ${unstatusedEntries.length} unstatused games`);
+  } catch (err) {
+    logger.warn(`Could not fetch unstatused games: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  logger.info(`Total games: ${games.length}`);
+
+  // Step 4: Fetch reviews and ratings
   if (games.length > 0) {
     logger.info('Fetching reviews...');
     try {
