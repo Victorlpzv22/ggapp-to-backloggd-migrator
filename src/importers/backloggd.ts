@@ -80,7 +80,10 @@ export async function importGames(
       if (alreadyInLibrary) {
         const action = options.conflictPolicy;
         if (action === 'skip') {
-          logger.warn(`Already in library, skipping: ${game.title}`);
+          logger.info(`Already in library, syncing lists only: ${game.title}`);
+          if (game.lists.length > 0) {
+            await syncGameLists(page, game, options.throttleSpeed);
+          }
           report.skipped++;
           continue;
         }
@@ -95,6 +98,9 @@ export async function importGames(
         if (action === 'ask') {
           const userAction = await promptConflictAction(game.title);
           if (userAction === 'skip') {
+            if (game.lists.length > 0) {
+              await syncGameLists(page, game, options.throttleSpeed);
+            }
             report.skipped++;
             continue;
           }
