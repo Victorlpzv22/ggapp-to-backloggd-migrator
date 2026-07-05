@@ -172,12 +172,12 @@ export async function extractGGAppData(username: string): Promise<Game[]> {
       if (list.gameCount === 0) continue;
       try {
         const listGamesData = await graphqlRequest(
-          `query gamesForList($listId: ID!) {
-            gamesForList(listId: $listId) {
+          `query gamesForList($listId: ID!, $limit: Int) {
+            gamesForList(listId: $listId, limit: $limit) {
               game { id name }
             }
           }`,
-          { listId: list.id },
+          { listId: list.id, limit: 1000 },
         );
 
         const listGames = (listGamesData as { gamesForList: Array<{ game: { id: number; name: string } }> }).gamesForList || [];
