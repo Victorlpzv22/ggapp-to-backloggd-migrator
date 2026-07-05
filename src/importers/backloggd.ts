@@ -421,12 +421,18 @@ async function fetchExistingListSlugs(page: Page, gameSlug: string, gameTitle: s
     await navigateToGamePage(page, link);
   }
 
+  const btnExists = await page.evaluate(() => !!document.querySelector('#add-to-list'));
+  if (!btnExists) return new Map();
+
   await page.evaluate(() => {
-    const btn = document.querySelector<HTMLElement>('#add-to-list');
-    btn?.click();
+    (document.querySelector<HTMLElement>('#add-to-list'))?.click();
   });
-  const modalReady = await page.waitForSelector('#list-container', { state: 'attached', timeout: 5000 }).catch(() => null);
-  if (!modalReady) return new Map();
+
+  await page.waitForFunction(() => {
+    const c = document.getElementById('list-container');
+    if (!c) return false;
+    return c.querySelectorAll('input.list-checkbox').length > 0;
+  }, { timeout: 8000 }).catch(() => {});
 
   const raw = await page.evaluate(() => {
     const container = document.getElementById('list-container');
@@ -492,7 +498,15 @@ async function ensureListsExist(page: Page, username: string, games: Game[]): Pr
   logger.info(`Ensuring ${allGGAppListNames.length} lists exist on Backloggd...`);
 
   const firstGame = games.find(g => g.slug) || games[0];
-  const existingLists = await fetchExistingListSlugs(page, firstGame.slug || firstGame.title, firstGame.title);
+  let existingLists = await fetchExistingListSlugs(page, firstGame.slug || firstGame.title, firstGame.title);
+
+  if (existingLists.size === 0) {
+    const alt = games.find(g => g.slug && g.slug !== firstGame.slug);
+    if (alt && alt.slug) {
+      existingLists = await fetchExistingListSlugs(page, alt.slug, alt.title);
+    }
+  }
+
   const mapping = new Map<string, string>();
 
   for (const ggappName of allGGAppListNames) {
