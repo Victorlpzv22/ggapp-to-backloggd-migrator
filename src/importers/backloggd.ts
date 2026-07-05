@@ -332,17 +332,23 @@ async function syncGameLists(
   throttleSpeed: 'slow' | 'normal' | 'fast',
   listMapping: Map<string, string>,
 ): Promise<void> {
-  if (game.lists.length === 0) return;
+  if (game.lists.length === 0) {
+    logger.info(`  No lists to sync for ${game.title}`);
+    return;
+  }
+
+  logger.info(`  Syncing lists for ${game.title}: [${game.lists.join(', ')}]`);
 
   const addBtn = page.locator('#add-to-list');
   if (!(await addBtn.isVisible().catch(() => false))) {
+    logger.info(`  #add-to-list not visible for ${game.title}`);
     return;
   }
   await addBtn.click();
   await page.waitForFunction(() => {
     const c = document.getElementById('list-container');
     return c && c.querySelectorAll('input.list-checkbox').length > 0;
-  }, { timeout: 8000 }).catch(() => {});
+  }, { timeout: 8000 }).catch(() => logger.info('  TIMEOUT waiting for list checkboxes'));
   await page.waitForTimeout(500);
 
   const listsInModal = await page.evaluate(() => {
@@ -358,17 +364,29 @@ async function syncGameLists(
     });
   });
 
+  logger.info(`  Found ${listsInModal.length} lists in modal`);
+
   let matched = 0;
   for (const listName of game.lists) {
     const backloggdSlug = listMapping.get(listName);
-    if (!backloggdSlug) continue;
+    if (!backloggdSlug) {
+      logger.info(`  No mapping for "${listName}"`);
+      continue;
+    }
 
     let checkbox = listsInModal.find(l => l.slug === backloggdSlug);
     if (!checkbox) {
       const normalizedTarget = normalizeForMatch(listName);
       checkbox = listsInModal.find(l => normalizeForMatch(l.title) === normalizedTarget);
+      if (checkbox) {
+        logger.info(`  Matched "${listName}" by title → slug "${checkbox.slug}"`);
+      }
     }
-    if (!checkbox) continue;
+    
+    if (!checkbox) {
+      logger.info(`  Checkbox not found for "${listName}" (slug "${backloggdSlug}")`);
+      continue;
+    }
 
     await page.evaluate((id: string) => {
       const cb = document.getElementById(id) as HTMLInputElement;
@@ -378,6 +396,7 @@ async function syncGameLists(
   }
 
   if (matched > 0) {
+    logger.info(`  Saving ${matched} list changes...`);
     await page.evaluate(() => {
       (document.querySelector<HTMLElement>('#add-to-list-save'))?.click();
     });
@@ -495,12 +514,15 @@ async function ensureListsExist(page: Page, username: string, games: Game[]): Pr
     }
   }
 
+  logger.info(`Existing lists in modal: ${existingLists.size} unique`);
+
   const mapping = new Map<string, string>();
 
   for (const ggappName of allGGAppListNames) {
     const normalized = normalizeForMatch(ggappName);
     const matchedSlug = existingLists.get(normalized);
     if (matchedSlug) {
+      logger.info(`Found existing list "${ggappName}" → slug "${matchedSlug}"`);
       mapping.set(ggappName, matchedSlug);
       continue;
     }
