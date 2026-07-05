@@ -84,7 +84,12 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
   const page = await context.newPage();
 
   try {
-    await page.goto('https://ggapp.io/', { waitUntil: 'networkidle' });
+    // Navigate to ggapp.io so the page context has access to localStorage
+    try {
+      await page.goto('https://ggapp.io/', { waitUntil: 'networkidle', timeout: 30000 });
+    } catch {
+      await page.goto('https://ggapp.io/', { waitUntil: 'load', timeout: 30000 });
+    }
     await page.waitForTimeout(2000);
 
     const result = await page.evaluate(async (uid: number) => {
