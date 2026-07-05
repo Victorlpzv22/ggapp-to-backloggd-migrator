@@ -6,13 +6,19 @@ import { wait } from '../utils/throttle.js';
 
 const BACKLOGGD_BASE = 'https://backloggd.com';
 
+const PLAY_TYPE_LABEL: Record<string, string> = {
+  played: 'Played',
+  paused: 'Shelved',
+  dropped: 'Abandoned',
+};
+
 export async function loginBackloggd(page: Page): Promise<void> {
-  await page.goto(`${BACKLOGGD_BASE}/login`, { waitUntil: 'networkidle' });
+  await page.goto(`${BACKLOGGD_BASE}/users/sign_in`, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
   logger.info('Please log in to Backloggd in the browser window.');
   logger.info('Waiting for login to complete...');
 
   await page.waitForFunction(
-    () => !window.location.pathname.startsWith('/login'),
+    () => !window.location.pathname.startsWith('/users/sign_in'),
     { timeout: 0 },
   );
   await page.waitForTimeout(2000);
@@ -45,7 +51,6 @@ export async function importGames(
     try {
       await wait(options.throttleSpeed);
 
-      // Navigate directly via slug if available, otherwise search
       let gameUrl: string | null = null;
       if (game.slug) {
         gameUrl = `${BACKLOGGD_BASE}/games/${game.slug}/`;
@@ -120,7 +125,6 @@ async function navigateToGamePage(page: Page, url: string): Promise<void> {
   try {
     await page.goto(url, { waitUntil: 'load', timeout: 15000 });
   } catch {
-    // Retry with domcontentloaded if load times out
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
   }
   await page.waitForTimeout(1000);
@@ -142,33 +146,16 @@ async function findExactGameLink(page: Page, title: string): Promise<string | nu
 
 async function isInLibrary(page: Page): Promise<boolean> {
   return page.evaluate(() => {
-    return !!document.querySelector('[data-in-library]');
+    const editBtn = document.querySelector('.log-editor-btn-edit');
+    return !!editBtn && !editBtn.classList.contains('d-none');
   });
 }
 
-async function updateGameOnPage(
-  page: Page,
-  game: Game,
-  status: BackloggdStatus,
-): Promise<void> {
-  if (game.rating) {
-    const ratingBtn = page.locator(`[data-rating-value="${game.rating}"]`);
-    if (await ratingBtn.isVisible()) {
-      await ratingBtn.click();
-    }
-  }
-
-  if (game.review) {
-    const reviewArea = page.locator('[data-review-textarea]');
-    if (await reviewArea.isVisible()) {
-      await reviewArea.fill(game.review);
-    }
-  }
-
-  const statusSelect = page.locator('[data-status-select]');
-  if (await statusSelect.isVisible()) {
-    await statusSelect.selectOption(status);
-  }
+async function setRatingOnPage(page: Page, rating: number): Promise<void> {
+  await page.evaluate((r: number) => {
+    const star = document.querySelector<HTMLInputElement>(`.star-radio[value="${r}"]`);
+    if (star) star.checked = true;
+  }, rating);
 }
 
 async function addGameToLibrary(
@@ -176,13 +163,120 @@ async function addGameToLibrary(
   game: Game,
   status: BackloggdStatus,
 ): Promise<void> {
-  const addButton = page.locator('[data-add-to-library]');
-  if (await addButton.isVisible()) {
-    await addButton.click();
-    await wait();
+  const needsModal = status === 'played' || status === 'paused' || status === 'dropped';
+
+  if (needsModal) {
+    await page.evaluate(() => {
+      const btn = document.querySelector<HTMLElement>('.d-md-flex .played-btn-container button');
+      btn?.click();
+    });
+    await page.waitForTimeout(1500);
+
+    const playType = PLAY_TYPE_LABEL[status] || 'Played';
+    await page.evaluate((type: string) => {
+      const option = document.querySelector<HTMLElement>(`.play-type-option[title="${type}"]`);
+      option?.click();
+    }, playType);
+  } else {
+    const typeMap: Record<string, string> = {
+      backlog: 'backlog',
+      playing: 'playing',
+      wishlist: 'wishlist',
+    };
+    const btnType = typeMap[status];
+    if (!btnType) return;
+
+    await page.evaluate((t: string) => {
+      const btn = document.querySelector<HTMLElement>(`.d-md-flex .${t}-btn-container button`);
+      btn?.click();
+    }, btnType);
   }
 
-  await updateGameOnPage(page, game, status);
+  await page.waitForTimeout(1500);
+
+  if (game.rating) {
+    await setRatingOnPage(page, game.rating);
+  }
+
+  if (game.review) {
+    await openLogEditor(page);
+    await page.waitForTimeout(1000);
+    await page.evaluate((text: string) => {
+      const review = document.getElementById('review') as HTMLTextAreaElement;
+      if (review) review.value = text;
+    }, game.review);
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector<HTMLElement>('.save-log');
+      saveBtn?.click();
+    });
+    await page.waitForTimeout(1000);
+  }
+}
+
+async function openLogEditor(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const btn = document.querySelector<HTMLElement>('.log-editor-btn');
+    btn?.click();
+  });
+  await page.waitForTimeout(1500);
+}
+
+async function updateGameOnPage(
+  page: Page,
+  game: Game,
+  status: BackloggdStatus,
+): Promise<void> {
+  await openLogEditor(page);
+
+  if (game.rating) {
+    await setRatingOnPage(page, game.rating);
+  }
+
+  if (game.review) {
+    await page.evaluate((text: string) => {
+      const review = document.getElementById('review') as HTMLTextAreaElement;
+      if (review) review.value = text;
+    }, game.review);
+  }
+
+  const typeMap: Record<string, string> = {
+    backlog: 'backlog_toggle_checkbox',
+    playing: 'playing_toggle_checkbox',
+    wishlist: 'wishlist_toggle_checkbox',
+    played: 'play_toggle_checkbox',
+    paused: 'play_toggle_checkbox',
+    dropped: 'play_toggle_checkbox',
+  };
+  const checkboxId = typeMap[status];
+  if (checkboxId) {
+    await page.evaluate((id: string) => {
+      const toggle = document.getElementById(id) as HTMLInputElement;
+      if (toggle) toggle.checked = true;
+    }, checkboxId);
+  }
+
+  if ((status === 'played' || status === 'paused' || status === 'dropped') && status !== 'played') {
+    const playType = PLAY_TYPE_LABEL[status];
+    await page.evaluate((type: string) => {
+      const selector = document.getElementById('game-status-selector');
+      selector?.click();
+      // After clicking, find the option by title
+      const options = document.querySelectorAll<HTMLElement>('.play-type-option');
+      for (const opt of options) {
+        if (opt.getAttribute('title') === type) {
+          opt.click();
+          break;
+        }
+      }
+    }, playType);
+    await page.waitForTimeout(500);
+  }
+
+  await page.evaluate(() => {
+    const saveBtn = document.querySelector<HTMLElement>('.save-log');
+    saveBtn?.click();
+  });
+  await page.waitForTimeout(1000);
 }
 
 async function syncGameLists(
@@ -192,25 +286,39 @@ async function syncGameLists(
 ): Promise<void> {
   if (game.lists.length === 0) return;
 
-  const listsButton = page.locator('[data-lists-button]');
-  if (await listsButton.isVisible()) {
-    await listsButton.click();
+  await page.evaluate(() => {
+    const btn = document.querySelector<HTMLElement>('#add-to-list');
+    if (!btn) {
+      // Try from inside journal modal
+      const listBtn = document.querySelector<HTMLElement>('.quick-list');
+      listBtn?.click();
+    } else {
+      btn.click();
+    }
+  });
+  await wait(throttleSpeed);
+
+  for (const listName of game.lists) {
+    await page.evaluate((name: string) => {
+      const container = document.getElementById('list-container');
+      if (!container) return;
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      for (const cb of checkboxes) {
+        const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
+        if (label && label.textContent?.trim() === name) {
+          cb.checked = true;
+          return;
+        }
+      }
+    }, listName);
     await wait(throttleSpeed);
   }
 
-  for (const listName of game.lists) {
-    const listCheckbox = page.locator(`[data-list-checkbox="${listName}"]`);
-    if (await listCheckbox.isVisible()) {
-      await listCheckbox.check();
-    } else {
-      const newListInput = page.locator('[data-new-list-input]');
-      if (await newListInput.isVisible()) {
-        await newListInput.fill(listName);
-        await page.locator('[data-create-list-button]').click();
-        await wait(throttleSpeed);
-      }
-    }
-  }
+  await page.evaluate(() => {
+    const save = document.querySelector<HTMLElement>('#add-to-list-save');
+    save?.click();
+  });
+  await page.waitForTimeout(1500);
 }
 
 async function promptConflictAction(title: string): Promise<'skip' | 'update'> {

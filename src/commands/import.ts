@@ -50,9 +50,12 @@ export async function importCommand(options: {
       await page.goto(BACKLOGGD_BASE, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
     } else {
       await loginBackloggd(page);
-      // Save session immediately so later runs are headless
-      await saveSession(context, 'backloggd', sessionDir);
-      logger.success('Backloggd session saved');
+      try {
+        await saveSession(context, 'backloggd', sessionDir);
+        logger.success('Backloggd session saved');
+      } catch (e) {
+        logger.warn(`Could not save session: ${e}`);
+      }
     }
 
     const report = await importGames(page, context, data.games, {
