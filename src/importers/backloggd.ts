@@ -388,7 +388,7 @@ async function syncGameLists(
       continue;
     }
 
-    await page.locator(`#${checkbox.id}`).click();
+    await page.locator(`label[for="${checkbox.id}"]`).click();
     matched++;
   }
 
