@@ -334,24 +334,16 @@ async function syncGameLists(
 ): Promise<void> {
   if (game.lists.length === 0) return;
 
-  const addBtn = await page.evaluate(() => {
-    const btn = document.querySelector<HTMLElement>('#add-to-list');
-    return btn ? true : false;
-  });
-  if (!addBtn) {
-    logger.info(`  #add-to-list not found for ${game.title}`);
+  const addBtn = page.locator('#add-to-list');
+  if (!(await addBtn.isVisible().catch(() => false))) {
     return;
   }
-
-  await page.evaluate(() => {
-    (document.querySelector<HTMLElement>('#add-to-list'))?.click();
-  });
-  const modalReady = await page.waitForSelector('#list-container', { state: 'attached', timeout: 5000 }).catch(() => null);
-  if (!modalReady) {
-    logger.info(`  List modal not opened for ${game.title}`);
-    return;
-  }
-  await page.waitForTimeout(1000);
+  await addBtn.click();
+  await page.waitForFunction(() => {
+    const c = document.getElementById('list-container');
+    return c && c.querySelectorAll('input.list-checkbox').length > 0;
+  }, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(500);
 
   const listsInModal = await page.evaluate(() => {
     const container = document.getElementById('list-container');
@@ -361,23 +353,22 @@ async function syncGameLists(
       const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
       const link = label?.querySelector<HTMLAnchorElement>('a[href*="/list/"]');
       const slug = link?.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
-      return { id: cb.id, checked: cb.checked, slug };
+      const title = label?.querySelector<HTMLElement>('[class*="title"]')?.textContent?.trim() || '';
+      return { id: cb.id, checked: cb.checked, slug, title };
     });
   });
 
   let matched = 0;
   for (const listName of game.lists) {
     const backloggdSlug = listMapping.get(listName);
-    if (!backloggdSlug) {
-      logger.info(`  No mapping for list "${listName}" → slug not found`);
-      continue;
-    }
+    if (!backloggdSlug) continue;
 
-    const checkbox = listsInModal.find(l => l.slug === backloggdSlug);
+    let checkbox = listsInModal.find(l => l.slug === backloggdSlug);
     if (!checkbox) {
-      logger.info(`  Checkbox not found: "${listName}" → slug "${backloggdSlug}"`);
-      continue;
+      const normalizedTarget = normalizeForMatch(listName);
+      checkbox = listsInModal.find(l => normalizeForMatch(l.title) === normalizedTarget);
     }
+    if (!checkbox) continue;
 
     await page.evaluate((id: string) => {
       const cb = document.getElementById(id) as HTMLInputElement;
@@ -421,12 +412,9 @@ async function fetchExistingListSlugs(page: Page, gameSlug: string, gameTitle: s
     await navigateToGamePage(page, link);
   }
 
-  const btnExists = await page.evaluate(() => !!document.querySelector('#add-to-list'));
-  if (!btnExists) return new Map();
-
-  await page.evaluate(() => {
-    (document.querySelector<HTMLElement>('#add-to-list'))?.click();
-  });
+  const addBtn = page.locator('#add-to-list');
+  if (!(await addBtn.isVisible().catch(() => false))) return new Map();
+  await addBtn.click();
 
   await page.waitForFunction(() => {
     const c = document.getElementById('list-container');
