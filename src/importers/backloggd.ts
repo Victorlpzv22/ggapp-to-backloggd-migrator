@@ -388,19 +388,14 @@ async function syncGameLists(
       continue;
     }
 
-    await page.evaluate((id: string) => {
-      const cb = document.getElementById(id) as HTMLInputElement;
-      if (cb) cb.checked = true;
-    }, checkbox.id);
+    await page.locator(`#${CSS.escape(checkbox.id)}`).click();
     matched++;
   }
 
   if (matched > 0) {
     logger.info(`  Saving ${matched} list changes...`);
-    await page.evaluate(() => {
-      (document.querySelector<HTMLElement>('#add-to-list-save'))?.click();
-    });
-    await page.waitForTimeout(1500);
+    await page.locator('#add-to-list-save').click();
+    await page.waitForTimeout(2000);
   }
 }
 
@@ -460,10 +455,7 @@ async function fetchExistingListSlugs(page: Page, gameSlug: string, gameTitle: s
     return results;
   });
 
-  await page.evaluate(() => {
-    const close = document.querySelector<HTMLElement>('[data-micromodal-close]');
-    close?.click();
-  });
+  await page.locator('[data-micromodal-close]').click().catch(() => {});
   await page.waitForTimeout(500);
 
   const map = new Map<string, string>();
