@@ -341,11 +341,22 @@ async function syncGameLists(
       btn.click();
     }
   });
-  await wait(throttleSpeed);
+  await page.waitForTimeout(2000);
+  const listContainerReady = await page.evaluate(() => {
+    const c = document.getElementById('list-container');
+    return c ? c.children.length > 0 : false;
+  });
+  if (!listContainerReady) {
+    logger.info(`  List container not ready for ${game.title}`);
+    return;
+  }
 
   for (const listName of game.lists) {
     const backloggdSlug = listMapping.get(listName);
-    if (!backloggdSlug) continue;
+    if (!backloggdSlug) {
+      logger.info(`  No mapping for list "${listName}"`);
+      continue;
+    }
 
     await page.evaluate((slug: string) => {
       const container = document.getElementById('list-container');
@@ -434,29 +445,7 @@ async function createBackloggdList(page: Page, username: string, displayName: st
   });
   await page.waitForTimeout(2000);
 
-  // After creation, find the newly created list on the page
-  const slug = await page.evaluate((name: string) => {
-    const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="/list/"]');
-    // Try to find exact text match first
-    for (const link of links) {
-      if (link.textContent?.trim() === name) {
-        return link.getAttribute('href')?.split('/list/')[1]?.replace('/', '') || null;
-      }
-    }
-    // Fallback: last unique list link
-    const seen = new Set<string>();
-    let last: string | null = null;
-    for (const link of links) {
-      const slug = link.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
-      if (slug && !seen.has(slug)) {
-        seen.add(slug);
-        last = slug;
-      }
-    }
-    return last;
-  }, displayName);
-
-  return slug || displayName;
+  return displayName.toLowerCase().replace(/\s+/g, '-');
 }
 
 async function ensureListsExist(page: Page, username: string, games: Game[]): Promise<Map<string, string>> {
