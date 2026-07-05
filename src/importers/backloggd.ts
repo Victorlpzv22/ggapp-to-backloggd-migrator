@@ -78,6 +78,7 @@ export async function importGames(
           logger.info(`Slug mismatch, searching by title: ${game.title}`);
           const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(game.title)}`;
           await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+          await page.waitForTimeout(2000);
           gameUrl = await findExactGameLink(page, game.title);
         } else {
           gameUrl = slugUrl;
@@ -85,6 +86,7 @@ export async function importGames(
       } else {
         const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(game.title)}`;
         await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+        await page.waitForTimeout(2000);
         gameUrl = await findExactGameLink(page, game.title);
       }
 
@@ -332,55 +334,64 @@ async function syncGameLists(
 ): Promise<void> {
   if (game.lists.length === 0) return;
 
-  await page.evaluate(() => {
+  const addBtn = await page.evaluate(() => {
     const btn = document.querySelector<HTMLElement>('#add-to-list');
-    if (!btn) {
-      const listBtn = document.querySelector<HTMLElement>('.quick-list');
-      listBtn?.click();
-    } else {
-      btn.click();
-    }
+    return btn ? true : false;
   });
-  await page.waitForTimeout(2000);
-  const listContainerReady = await page.evaluate(() => {
-    const c = document.getElementById('list-container');
-    return c ? c.children.length > 0 : false;
-  });
-  if (!listContainerReady) {
-    logger.info(`  List container not ready for ${game.title}`);
+  if (!addBtn) {
+    logger.info(`  #add-to-list not found for ${game.title}`);
     return;
   }
 
+  await page.evaluate(() => {
+    (document.querySelector<HTMLElement>('#add-to-list'))?.click();
+  });
+  const modalReady = await page.waitForSelector('#list-container', { state: 'attached', timeout: 5000 }).catch(() => null);
+  if (!modalReady) {
+    logger.info(`  List modal not opened for ${game.title}`);
+    return;
+  }
+  await page.waitForTimeout(1000);
+
+  const listsInModal = await page.evaluate(() => {
+    const container = document.getElementById('list-container');
+    if (!container) return [];
+    const items = container.querySelectorAll<HTMLInputElement>('input.list-checkbox');
+    return Array.from(items).map(cb => {
+      const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
+      const link = label?.querySelector<HTMLAnchorElement>('a[href*="/list/"]');
+      const slug = link?.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
+      return { id: cb.id, checked: cb.checked, slug };
+    });
+  });
+
+  let matched = 0;
   for (const listName of game.lists) {
     const backloggdSlug = listMapping.get(listName);
     if (!backloggdSlug) {
-      logger.info(`  No mapping for list "${listName}"`);
+      logger.info(`  No mapping for list "${listName}" → slug not found`);
       continue;
     }
 
-    await page.evaluate((slug: string) => {
-      const container = document.getElementById('list-container');
-      if (!container) return;
-      const items = container.querySelectorAll<HTMLInputElement>('input.list-checkbox');
-      for (const cb of items) {
-        const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
-        if (!label) continue;
-        const link = label.querySelector<HTMLAnchorElement>('a[href*="/list/"]');
-        const foundSlug = link?.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
-        if (foundSlug === slug) {
-          cb.checked = true;
-          return;
-        }
-      }
-    }, backloggdSlug);
-    await wait(throttleSpeed);
+    const checkbox = listsInModal.find(l => l.slug === backloggdSlug);
+    if (!checkbox) {
+      logger.info(`  Checkbox not found: "${listName}" → slug "${backloggdSlug}"`);
+      continue;
+    }
+
+    await page.evaluate((id: string) => {
+      const cb = document.getElementById(id) as HTMLInputElement;
+      if (cb) cb.checked = true;
+    }, checkbox.id);
+    matched++;
   }
 
-  await page.evaluate(() => {
-    const save = document.querySelector<HTMLElement>('#add-to-list-save');
-    save?.click();
-  });
-  await page.waitForTimeout(1500);
+  if (matched > 0) {
+    await page.evaluate(() => {
+      (document.querySelector<HTMLElement>('#add-to-list-save'))?.click();
+    });
+    await page.waitForTimeout(1500);
+  }
 }
 
 async function getUsername(page: Page): Promise<string> {
