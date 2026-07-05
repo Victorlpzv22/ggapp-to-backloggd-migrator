@@ -68,8 +68,20 @@ export async function importGames(
       await wait(options.throttleSpeed);
 
       let gameUrl: string | null = null;
+
       if (game.slug) {
-        gameUrl = `${BACKLOGGD_BASE}/games/${game.slug}/`;
+        const slugUrl = `${BACKLOGGD_BASE}/games/${game.slug}/`;
+        await navigateToGamePage(page, slugUrl);
+        const pageTitle = await page.title();
+
+        if (pageTitle === 'Game not found') {
+          logger.info(`Slug mismatch, searching by title: ${game.title}`);
+          const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(game.title)}`;
+          await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+          gameUrl = await findExactGameLink(page, game.title);
+        } else {
+          gameUrl = slugUrl;
+        }
       } else {
         const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(game.title)}`;
         await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
