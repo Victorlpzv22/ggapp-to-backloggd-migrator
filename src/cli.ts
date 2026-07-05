@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { extractCommand } from './commands/extract.js';
+import { importCommand } from './commands/import.js';
 
 const program = new Command();
 
@@ -29,9 +30,21 @@ program
 program
   .command('import')
   .description('Import game data from JSON file to Backloggd')
+  .option('--headless <bool>', 'Run browser without UI', 'true')
+  .option('--throttle <speed>', 'slow|normal|fast', 'normal')
+  .option('--session-dir <dir>', 'Session directory', 'sessions')
+  .option('--data-file <path>', 'Input JSON file', 'data/ggapp-data.json')
+  .option('--config <path>', 'Config file path')
   .option('--on-conflict <policy>', 'skip|merge|overwrite|ask', 'skip')
-  .action(() => {
-    console.log('import command - not implemented yet');
+  .action(async (opts) => {
+    await importCommand({
+      throttle: opts.throttle,
+      headless: opts.headless === 'true',
+      sessionDir: opts.sessionDir,
+      dataFile: opts.dataFile,
+      config: opts.config,
+      onConflict: opts.onConflict,
+    });
   });
 
 program
