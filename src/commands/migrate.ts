@@ -21,7 +21,6 @@ export async function migrateCommand(options: {
   direct?: boolean;
 }) {
   const config = loadConfig(options.config);
-  const headless = options.headless ?? config.headless ?? true;
   const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as 'slow' | 'normal' | 'fast';
   const sessionDir = options.sessionDir ?? config.sessionDir ?? 'sessions';
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
@@ -43,10 +42,14 @@ export async function migrateCommand(options: {
   }
 
   // --- Phase 2: Import (Playwright for Backloggd) ---
-  const browser = await chromium.launch({ headless });
   const backloggdSessionPath = sessionExists('backloggd', sessionDir)
     ? path.join(sessionDir, 'backloggd.json')
     : undefined;
+
+  // Force visible browser for login if no session exists
+  const headless = backloggdSessionPath ? (options.headless ?? config.headless ?? true) : false;
+
+  const browser = await chromium.launch({ headless });
   const context = await browser.newContext({ storageState: backloggdSessionPath });
 
   try {
@@ -54,7 +57,7 @@ export async function migrateCommand(options: {
 
     if (backloggdSessionPath) {
       logger.info('Restored saved Backloggd session');
-      await page.goto(BACKLOGGD_BASE, { waitUntil: 'networkidle' });
+      await page.goto(BACKLOGGD_BASE, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
     } else {
       await loginBackloggd(page);
     }

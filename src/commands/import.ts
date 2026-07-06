@@ -18,7 +18,6 @@ export async function importCommand(options: {
   onConflict?: string;
 }) {
   const config = loadConfig(options.config);
-  const headless = options.headless ?? config.headless ?? true;
   const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as 'slow' | 'normal' | 'fast';
   const sessionDir = options.sessionDir ?? config.sessionDir ?? 'sessions';
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
@@ -30,13 +29,36 @@ export async function importCommand(options: {
   }
 
   const raw = fs.readFileSync(dataFile, 'utf-8');
-  const data: GGAppData = JSON.parse(raw);
-  logger.info(`Loaded ${data.games.length} games from ${dataFile}`);
+  const parsed = JSON.parse(raw);
+  let data: GGAppData;
+  if (Array.isArray(parsed)) {
+    const games = parsed
+      .filter((g: any) => g && typeof g.title === 'string')
+      .map((g: any) => ({
+        title: g.title,
+        status: g.status ?? 'Want to Play',
+        rating: g.rating,
+        review: g.review,
+        lists: Array.isArray(g.lists) ? g.lists : [],
+        gameId: g.gameId,
+        token: g.token,
+        slug: g.slug,
+      }));
+    data = { exportedAt: new Date().toISOString(), games };
+    logger.info(`Loaded ${data.games.length} games from not-found file ${dataFile}`);
+  } else {
+    data = parsed as GGAppData;
+    logger.info(`Loaded ${data.games.length} games from ${dataFile}`);
+  }
 
-  const browser = await chromium.launch({ headless });
   const sessionPath = sessionExists('backloggd', sessionDir)
     ? path.join(sessionDir, 'backloggd.json')
     : undefined;
+
+  // Force visible browser for login if no session exists
+  const headless = sessionPath ? (options.headless ?? config.headless ?? true) : false;
+
+  const browser = await chromium.launch({ headless });
   const context = await browser.newContext({ storageState: sessionPath });
 
   try {
@@ -44,9 +66,15 @@ export async function importCommand(options: {
 
     if (sessionPath) {
       logger.info('Restored saved Backloggd session');
-      await page.goto(BACKLOGGD_BASE, { waitUntil: 'networkidle' });
+      await page.goto(BACKLOGGD_BASE, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
     } else {
       await loginBackloggd(page);
+      try {
+        await saveSession(context, 'backloggd', sessionDir);
+        logger.success('Backloggd session saved');
+      } catch (e) {
+        logger.warn(`Could not save session: ${e}`);
+      }
     }
 
     const report = await importGames(page, context, data.games, {

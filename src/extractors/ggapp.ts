@@ -73,7 +73,7 @@ export async function loginGGApp(): Promise<void> {
 }
 
 /** Get wishlist game IDs from authenticated session */
-async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<number, string>> {
+async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<number, { name: string; slug: string }>> {
   if (!sessionExists(SITE_NAME)) {
     logger.warn('No saved GGApp session found. Run login first with: npm run login');
     return new Map();
@@ -117,7 +117,7 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
         body: JSON.stringify({
           query: `query wishlistGames($filter: WishlistFilter, $order: WishlistOrder, $limit: Int, $offset: Int) {
             wishlistGames(filter: $filter, order: $order, limit: $limit, offset: $offset) {
-              game { id name }
+              game { id name slug }
             }
           }`,
           variables: {
@@ -128,11 +128,11 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
           },
         }),
       });
-      const data = await resp.json() as { data?: { wishlistGames?: Array<{ game: { id: number; name: string } }> } };
+      const data = await resp.json() as { data?: { wishlistGames?: Array<{ game: { id: number; name: string; slug: string } }> } };
       const games = data?.data?.wishlistGames || [];
       return {
         total,
-        games: games.map((wg) => ({ id: wg.game.id, name: wg.game.name })),
+        games: games.map((wg) => ({ id: wg.game.id, name: wg.game.name, slug: wg.game.slug })),
       };
     }, userId);
 
@@ -141,9 +141,9 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
       return new Map();
     }
 
-    const { total, games } = result as { total: number; games: Array<{ id: number; name: string }> };
+    const { total, games } = result as { total: number; games: Array<{ id: number; name: string; slug: string }> };
     logger.success(`Wishlist: ${games.length} of ${total} games fetched via session`);
-    return new Map(games.map((g) => [g.id, g.name]));
+    return new Map(games.map((g) => [g.id, { name: g.name, slug: g.slug }]));
   } catch (err) {
     logger.warn(`Could not fetch wishlist: ${err instanceof Error ? err.message : String(err)}`);
     return new Map();
@@ -200,6 +200,7 @@ export async function extractGGAppData(
     lists: [],
     gameId: entry.game.id,
     token: entry.game.token,
+    slug: entry.game.slug,
   }));
 
   logger.success(`Found ${games.length} games with a play status`);
@@ -229,6 +230,7 @@ export async function extractGGAppData(
           lists: [],
           gameId: entry.game.id,
           token: entry.game.token,
+          slug: entry.game.slug,
         });
       }
     }
@@ -241,16 +243,17 @@ export async function extractGGAppData(
   const wishlistGames = await fetchWishlistIds(userId, headless);
   if (wishlistGames.size > 0) {
     let added = 0;
-    for (const [id, name] of wishlistGames) {
+    for (const [id, info] of wishlistGames) {
       if (!games.some((g) => g.gameId === id)) {
         games.push({
-          title: name,
+          title: info.name,
           status: 'Wishlist' as GGAppStatus,
           rating: undefined,
           review: undefined,
           lists: [],
           gameId: id,
           token: undefined,
+          slug: info.slug,
         });
         added++;
       }
