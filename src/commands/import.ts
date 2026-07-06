@@ -29,8 +29,27 @@ export async function importCommand(options: {
   }
 
   const raw = fs.readFileSync(dataFile, 'utf-8');
-  const data: GGAppData = JSON.parse(raw);
-  logger.info(`Loaded ${data.games.length} games from ${dataFile}`);
+  const parsed = JSON.parse(raw);
+  let data: GGAppData;
+  if (Array.isArray(parsed)) {
+    const games = parsed
+      .filter((g: any) => g && typeof g.title === 'string')
+      .map((g: any) => ({
+        title: g.title,
+        status: g.status ?? 'Want to Play',
+        rating: g.rating,
+        review: g.review,
+        lists: Array.isArray(g.lists) ? g.lists : [],
+        gameId: g.gameId,
+        token: g.token,
+        slug: g.slug,
+      }));
+    data = { exportedAt: new Date().toISOString(), games };
+    logger.info(`Loaded ${data.games.length} games from not-found file ${dataFile}`);
+  } else {
+    data = parsed as GGAppData;
+    logger.info(`Loaded ${data.games.length} games from ${dataFile}`);
+  }
 
   const sessionPath = sessionExists('backloggd', sessionDir)
     ? path.join(sessionDir, 'backloggd.json')
