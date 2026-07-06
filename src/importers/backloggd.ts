@@ -19,6 +19,63 @@ function normalizeForMatch(name: string): string {
   )].sort().join(' ');
 }
 
+const ROMAN_TO_ARABIC: Record<string, string> = {
+  ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9',
+};
+
+function stripTrademarks(s: string): string {
+  return s.replace(/[™®©]/g, '');
+}
+
+function normalizeApostrophes(s: string): string {
+  return s.replace(/[''`´]/g, "'");
+}
+
+function stripDuplicateTag(s: string): string {
+  return s.replace(/\s*\[duplicate\]/gi, '').trim();
+}
+
+function normalizeForSearch(title: string): string {
+  return stripDuplicateTag(stripTrademarks(normalizeApostrophes(title)))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeForMatchExtended(name: string): string {
+  return stripDuplicateTag(stripTrademarks(normalizeApostrophes(name)))
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, ' ')
+    .replace(/[-_\s]+/g, ' ')
+    .trim();
+}
+
+function buildCleanSlug(title: string, stripApos: boolean = false): string {
+  let s = normalizeForSearch(title);
+  if (stripApos) s = s.replace(/'/g, '');
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/[\s-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function buildSlugVariants(title: string, originalSlug?: string): string[] {
+  const variants: string[] = [];
+  const clean = buildCleanSlug(title);
+  const noApos = buildCleanSlug(title, true);
+
+  if (originalSlug && originalSlug !== clean && originalSlug !== noApos) variants.push(originalSlug);
+  if (clean && !variants.includes(clean)) variants.push(clean);
+  if (noApos !== clean && noApos && !variants.includes(noApos)) variants.push(noApos);
+
+  const romanSuffix = clean.match(/-(ii|iii|iv|v|vi|vii|viii|ix)$/);
+  if (romanSuffix) {
+    const arabic = clean.slice(0, -romanSuffix[1].length) + ROMAN_TO_ARABIC[romanSuffix[1]];
+    if (!variants.includes(arabic)) variants.push(arabic);
+  }
+  return [...new Set(variants.filter(Boolean))];
+}
+
 const PLAY_TYPE_LABEL: Record<string, string> = {
   played: 'Played',
   paused: 'Shelved',
@@ -70,21 +127,28 @@ export async function importGames(
       let gameUrl: string | null = null;
 
       if (game.slug) {
-        const slugUrl = `${BACKLOGGD_BASE}/games/${game.slug}/`;
-        await navigateToGamePage(page, slugUrl);
-        const pageTitle = await page.title();
+        const slugVariants = buildSlugVariants(game.title, game.slug);
+        for (const slug of slugVariants) {
+          const slugUrl = `${BACKLOGGD_BASE}/games/${slug}/`;
+          await navigateToGamePage(page, slugUrl);
+          const pageTitle = await page.title();
+          if (pageTitle !== 'Game not found') {
+            gameUrl = slugUrl;
+            break;
+          }
+        }
 
-        if (pageTitle === 'Game not found') {
-          logger.info(`Slug mismatch, searching by title: ${game.title}`);
-          const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(game.title)}`;
+        if (!gameUrl) {
+          const cleanTitle = normalizeForSearch(game.title);
+          logger.info(`Slugs failed, searching by title: ${cleanTitle}`);
+          const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(cleanTitle)}`;
           await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
           await page.waitForTimeout(2000);
           gameUrl = await findExactGameLink(page, game.title);
-        } else {
-          gameUrl = slugUrl;
         }
       } else {
-        const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(game.title)}`;
+        const cleanTitle = normalizeForSearch(game.title);
+        const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(cleanTitle)}`;
         await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
         await page.waitForTimeout(2000);
         gameUrl = await findExactGameLink(page, game.title);
@@ -178,17 +242,31 @@ async function navigateToGamePage(page: Page, url: string): Promise<void> {
 }
 
 async function findExactGameLink(page: Page, title: string): Promise<string | null> {
-  return page.evaluate((searchTitle) => {
+  const queryNorm = normalizeForMatchExtended(title);
+  return page.evaluate((searchQ: string) => {
     const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="/games/"]');
-    const lowerTitle = searchTitle.toLowerCase();
+    let exact: string | null = null;
+    let prefix: string | null = null;
+
     for (const link of links) {
-      const text = link.textContent?.trim() ?? '';
-      if (text.toLowerCase().startsWith(lowerTitle)) {
+      const raw = link.textContent?.trim() ?? '';
+      if (!raw) continue;
+      const linkN = raw
+        .toLowerCase()
+        .replace(/[™®©]/g, '')
+        .replace(/[''`´]/g, "'")
+        .replace(/[^\w\s-]/g, ' ')
+        .replace(/[-_\s]+/g, ' ')
+        .trim();
+      if (linkN === searchQ) {
         return link.href;
       }
+      if (!prefix && linkN.startsWith(searchQ)) {
+        prefix = link.href;
+      }
     }
-    return null;
-  }, title);
+    return prefix;
+  }, queryNorm);
 }
 
 async function isInLibrary(page: Page): Promise<boolean> {
@@ -414,11 +492,20 @@ async function getUsername(page: Page): Promise<string> {
 }
 
 async function fetchExistingListSlugs(page: Page, gameSlug: string, gameTitle: string): Promise<Map<string, string>> {
-  const listsUrl = `${BACKLOGGD_BASE}/games/${gameSlug}/`;
-  await navigateToGamePage(page, listsUrl);
+  const slugVariants = buildSlugVariants(gameTitle, gameSlug);
+  let found = false;
+  for (const slug of slugVariants) {
+    const listsUrl = `${BACKLOGGD_BASE}/games/${slug}/`;
+    await navigateToGamePage(page, listsUrl);
+    if ((await page.title()) !== 'Game not found') {
+      found = true;
+      break;
+    }
+  }
 
-  if (await page.title() === 'Game not found') {
-    const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(gameTitle)}`;
+  if (!found) {
+    const cleanTitle = normalizeForSearch(gameTitle);
+    const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(cleanTitle)}`;
     await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(2000);
     const link = await findExactGameLink(page, gameTitle);
