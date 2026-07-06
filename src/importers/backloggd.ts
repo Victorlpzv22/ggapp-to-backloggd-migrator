@@ -577,23 +577,42 @@ async function createBackloggdList(page: Page, username: string, displayName: st
   return displayName.toLowerCase().replace(/\s+/g, '-');
 }
 
+async function fetchAllExistingListSlugs(page: Page, username: string): Promise<Map<string, string>> {
+  await page.goto(`${BACKLOGGD_BASE}/u/${username}/lists/`, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(1000);
+
+  return page.evaluate(() => {
+    const results: Array<[string, string]> = [];
+    const seen = new Set<string>();
+    const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="/list/"]');
+    for (const link of links) {
+      const href = link.getAttribute('href') || '';
+      const m = href.match(/\/list\/([^/]+)\/?/);
+      if (!m) continue;
+      const slug = m[1];
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      const text = link.textContent?.trim() || slug;
+      results.push([text, slug]);
+    }
+    return results;
+  }).then((raw: Array<[string, string]>) => {
+    const map = new Map<string, string>();
+    for (const [title, slug] of raw) {
+      map.set(normalizeForMatch(title), slug);
+    }
+    return map;
+  });
+}
+
 async function ensureListsExist(page: Page, username: string, games: Game[]): Promise<Map<string, string>> {
   const allGGAppListNames = [...new Set(games.flatMap((g) => g.lists || []))].sort();
   if (allGGAppListNames.length === 0) return new Map();
 
   logger.info(`Ensuring ${allGGAppListNames.length} lists exist on Backloggd...`);
 
-  const firstGame = games.find(g => g.slug) || games[0];
-  let existingLists = await fetchExistingListSlugs(page, firstGame.slug || firstGame.title, firstGame.title);
-
-  if (existingLists.size === 0) {
-    const alt = games.find(g => g.slug && g.slug !== firstGame.slug);
-    if (alt && alt.slug) {
-      existingLists = await fetchExistingListSlugs(page, alt.slug, alt.title);
-    }
-  }
-
-  logger.info(`Existing lists in modal: ${existingLists.size} unique`);
+  const existingLists = await fetchAllExistingListSlugs(page, username);
+  logger.info(`Existing lists on profile: ${existingLists.size} unique`);
 
   const mapping = new Map<string, string>();
 
@@ -610,7 +629,7 @@ async function ensureListsExist(page: Page, username: string, games: Game[]): Pr
     logger.info(`Creating list: ${displayName}`);
     const newSlug = await createBackloggdList(page, username, displayName);
     mapping.set(ggappName, newSlug);
-    existingLists.set(normalized, newSlug);
+    existingLists.set(normalizeForMatch(displayName), newSlug);
   }
 
   logger.success(`All ${allGGAppListNames.length} lists ready`);
