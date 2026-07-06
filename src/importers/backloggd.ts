@@ -584,7 +584,7 @@ async function fetchAllExistingListSlugs(page: Page, username: string): Promise<
   return page.evaluate(() => {
     const results: Array<[string, string]> = [];
     const seen = new Set<string>();
-    const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="/list/"]');
+    const links = document.querySelectorAll<HTMLAnchorElement>('a.secondary-link[href*="/list/"]');
     for (const link of links) {
       const href = link.getAttribute('href') || '';
       const m = href.match(/\/list\/([^/]+)\/?/);
