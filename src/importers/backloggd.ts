@@ -432,67 +432,6 @@ async function getUsername(page: Page): Promise<string> {
   throw new Error('Could not detect Backloggd username from navbar. Are you logged in?');
 }
 
-async function fetchExistingListSlugs(page: Page, gameSlug: string, gameTitle: string): Promise<Map<string, string>> {
-  const slugVariants = buildSlugVariants(gameTitle, gameSlug);
-  let found = false;
-  for (const slug of slugVariants) {
-    const listsUrl = `${BACKLOGGD_BASE}/games/${slug}/`;
-    await navigateToGamePage(page, listsUrl);
-    if ((await page.title()) !== 'Game not found') {
-      found = true;
-      break;
-    }
-  }
-
-  if (!found) {
-    const cleanTitle = normalizeForSearch(gameTitle);
-    const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(cleanTitle)}`;
-    await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(2000);
-    const link = await findExactGameLink(page, gameTitle);
-    if (!link) return new Map();
-    await navigateToGamePage(page, link);
-  }
-
-  const addBtn = page.locator('#add-to-list');
-  if (!(await addBtn.isVisible().catch(() => false))) return new Map();
-  await addBtn.click();
-
-  await page.waitForFunction(() => {
-    const c = document.getElementById('list-container');
-    if (!c) return false;
-    return c.querySelectorAll('input.list-checkbox').length > 0;
-  }, { timeout: 8000 }).catch(() => {});
-
-  const raw = await page.evaluate(() => {
-    const container = document.getElementById('list-container');
-    if (!container) return [];
-    const items = container.querySelectorAll<HTMLInputElement>('input.list-checkbox');
-    const results: Array<[string, string]> = [];
-    const seen = new Set<string>();
-    for (const cb of items) {
-      const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
-      if (!label) continue;
-      const link = label.querySelector<HTMLAnchorElement>('a[href*="/list/"]');
-      const slug = link?.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
-      if (!slug || seen.has(slug)) continue;
-      seen.add(slug);
-      const title = label.querySelector<HTMLElement>('[class*="title"]')?.textContent?.trim() || slug;
-      results.push([title, slug]);
-    }
-    return results;
-  });
-
-  await page.locator('[data-micromodal-close]').click().catch(() => {});
-  await page.waitForTimeout(500);
-
-  const map = new Map<string, string>();
-  for (const [title, slug] of raw) {
-    map.set(normalizeForMatch(title), slug);
-  }
-  return map;
-}
-
 async function createBackloggdList(page: Page, username: string, displayName: string): Promise<string> {
   await page.goto(`${BACKLOGGD_BASE}/u/${username}/lists/`, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1000);
