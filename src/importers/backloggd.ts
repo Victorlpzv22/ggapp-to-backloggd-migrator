@@ -330,7 +330,7 @@ async function updateGameOnPage(
     }, checkboxId);
   }
 
-  if ((status === 'played' || status === 'paused' || status === 'dropped') && status !== 'played') {
+  if (status === 'paused' || status === 'dropped') {
     const playType = PLAY_TYPE_LABEL[status];
     await page.evaluate((type: string) => {
       const selector = document.getElementById('game-status-selector');
