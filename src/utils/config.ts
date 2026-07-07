@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { type MigratorConfig } from '../models/index.js';
-import { info } from './logger.js';
+import { info, warn } from './logger.js';
 
 const DEFAULT_CONFIG_PATH = 'migrator.config.json';
 
@@ -15,7 +15,8 @@ export function loadConfig(configPath?: string): MigratorConfig {
     const config = JSON.parse(raw) as MigratorConfig;
     info(`Loaded config from ${filePath}`);
     return config;
-  } catch {
+  } catch (err) {
+    warn(`Could not parse config from ${filePath}: ${err instanceof Error ? err.message : String(err)}. Using defaults.`);
     return {};
   }
 }

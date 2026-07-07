@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import { loadConfig } from './config';
+import * as logger from './logger';
 
 describe('loadConfig', () => {
   const testConfig = {
@@ -33,5 +34,16 @@ describe('loadConfig', () => {
     fs.writeFileSync('test-config.json', 'not-json');
     const config = loadConfig('test-config.json');
     expect(config).toEqual({});
+  });
+
+  it('logs a warning on invalid JSON so a typo is not silently ignored', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    fs.writeFileSync('test-config.json', '{not valid json}');
+    const config = loadConfig('test-config.json');
+    expect(config).toEqual({});
+    expect(warnSpy).toHaveBeenCalled();
+    const message = warnSpy.mock.calls[0][0] as string;
+    expect(message).toContain('Could not parse config');
+    warnSpy.mockRestore();
   });
 });
