@@ -411,18 +411,25 @@ async function syncGameLists(
   }
 }
 
+export function parseUsernameFromHref(href: string): string | null {
+  const parts = href.split('/u/');
+  if (parts.length < 2) return null;
+  const seg = parts[1].split('/')[0].split('#')[0];
+  return seg || null;
+}
+
 async function getUsername(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const profileLink = document.querySelector<HTMLAnchorElement>('nav a[href*="/u/"], .dropdown-item[href*="/u/"]');
-    if (profileLink) {
-      const href = profileLink.getAttribute('href') || '';
-      const parts = href.split('/u/');
-      if (parts.length > 1) {
-        return parts[1].split('/')[0].split('#')[0];
-      }
-    }
-    return 'Victorlpzv';
+  const hrefs = await page.evaluate<string[]>(() => {
+    const links = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('nav a[href*="/u/"], .dropdown-item[href*="/u/"]'),
+    );
+    return links.map((l) => l.getAttribute('href') || '').filter(Boolean);
   });
+  for (const href of hrefs) {
+    const name = parseUsernameFromHref(href);
+    if (name) return name;
+  }
+  throw new Error('Could not detect Backloggd username from navbar. Are you logged in?');
 }
 
 async function fetchExistingListSlugs(page: Page, gameSlug: string, gameTitle: string): Promise<Map<string, string>> {
