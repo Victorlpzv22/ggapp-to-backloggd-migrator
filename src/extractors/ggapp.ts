@@ -2,8 +2,8 @@ import { chromium } from 'playwright';
 import { type Game, type GGAppStatus } from '../models/index.js';
 import * as logger from '../utils/logger.js';
 import { saveSession, sessionExists } from '../utils/session.js';
+import { GGAPP_API_URL } from '../constants.js';
 
-const API_URL = 'https://api.ggapp.io/';
 const SITE_NAME = 'ggapp';
 
 interface GraphQLResponse {
@@ -22,7 +22,7 @@ async function graphqlRequest(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(API_URL, {
+  const response = await fetch(GGAPP_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),

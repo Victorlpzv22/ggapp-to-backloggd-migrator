@@ -7,8 +7,7 @@ import { loginBackloggd, importGames } from '../importers/backloggd.js';
 import * as logger from '../utils/logger.js';
 import { type GGAppData, type ConflictPolicy } from '../models/index.js';
 import { loadConfig } from '../utils/config.js';
-
-const BACKLOGGD_BASE = 'https://backloggd.com';
+import { BACKLOGGD_BASE } from '../constants.js';
 
 export async function migrateCommand(options: {
   username: string;
