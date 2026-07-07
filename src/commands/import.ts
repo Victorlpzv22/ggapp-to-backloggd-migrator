@@ -23,8 +23,7 @@ export async function importCommand(options: {
   const conflictPolicy = (options.onConflict ?? config.defaultConflictPolicy ?? 'skip') as ConflictPolicy;
 
   if (!fs.existsSync(dataFile)) {
-    logger.error(`Data file not found: ${dataFile}. Run extract first.`);
-    process.exit(1);
+    throw new Error(`Data file not found: ${dataFile}. Run extract first.`);
   }
 
   const raw = fs.readFileSync(dataFile, 'utf-8');
