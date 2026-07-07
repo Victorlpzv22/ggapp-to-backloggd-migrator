@@ -64,27 +64,37 @@ export async function importGames(
         const slugVariants = buildSlugVariants(game.title, game.slug);
         for (const slug of slugVariants) {
           const slugUrl = `${BACKLOGGD_BASE}/games/${slug}/`;
-          await navigateToGamePage(page, slugUrl);
-          const pageTitle = await page.title();
-          if (pageTitle !== 'Game not found') {
-            gameUrl = slugUrl;
-            break;
-          }
+          const ok = await navigateToGamePage(page, slugUrl);
+          if (isNotFoundScenario(await page.title(), !ok)) continue;
+          gameUrl = slugUrl;
+          break;
         }
 
         if (!gameUrl) {
           const cleanTitle = normalizeForSearch(game.title);
           logger.info(`Slugs failed, searching by title: ${cleanTitle}`);
           const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(cleanTitle)}`;
-          await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+          let searchOk = true;
+          await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {
+            searchOk = false;
+          });
           await page.waitForTimeout(2000);
+          if (!searchOk) {
+            logger.warn(`Search navigation failed for ${game.title}; treating as transient`);
+          }
           gameUrl = await findExactGameLink(page, game.title);
         }
       } else {
         const cleanTitle = normalizeForSearch(game.title);
         const searchUrl = `${BACKLOGGD_BASE}/search/games/${encodeURIComponent(cleanTitle)}`;
-        await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+        let searchOk = true;
+        await page.goto(searchUrl, { waitUntil: 'load', timeout: 15000 }).catch(() => {
+          searchOk = false;
+        });
         await page.waitForTimeout(2000);
+        if (!searchOk) {
+          logger.warn(`Search navigation failed for ${game.title}; treating as transient`);
+        }
         gameUrl = await findExactGameLink(page, game.title);
       }
 
@@ -99,10 +109,10 @@ export async function importGames(
         continue;
       }
 
-      await navigateToGamePage(page, gameUrl);
+      const finalNavOk = await navigateToGamePage(page, gameUrl);
       await wait(options.throttleSpeed);
 
-      if (await page.title() === 'Game not found') {
+      if (isNotFoundScenario(await page.title(), !finalNavOk)) {
         logger.warn(`Game page not found: ${game.title} (${gameUrl})`);
         report.notFound++;
         report.notFoundGames.push({
@@ -166,13 +176,19 @@ export async function importGames(
   return report;
 }
 
-async function navigateToGamePage(page: Page, url: string): Promise<void> {
+async function navigateToGamePage(page: Page, url: string): Promise<boolean> {
   try {
     await page.goto(url, { waitUntil: 'load', timeout: 15000 });
   } catch {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    } catch {
+      await page.waitForTimeout(1000);
+      return false;
+    }
   }
   await page.waitForTimeout(1000);
+  return true;
 }
 
 async function findExactGameLink(page: Page, title: string): Promise<string | null> {
@@ -416,6 +432,10 @@ export function parseUsernameFromHref(href: string): string | null {
   if (parts.length < 2) return null;
   const seg = parts[1].split('/')[0].split('#')[0];
   return seg || null;
+}
+
+export function isNotFoundScenario(pageTitle: string, navError: boolean): boolean {
+  return pageTitle === 'Game not found' && !navError;
 }
 
 async function getUsername(page: Page): Promise<string> {

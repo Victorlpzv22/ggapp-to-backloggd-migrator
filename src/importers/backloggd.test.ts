@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseUsernameFromHref } from './backloggd.js';
+import { parseUsernameFromHref, isNotFoundScenario } from './backloggd.js';
 
 describe('parseUsernameFromHref', () => {
   it('extracts username from /u/<name>/profile', () => {
@@ -16,5 +16,20 @@ describe('parseUsernameFromHref', () => {
   });
   it('returns null for empty string', () => {
     expect(parseUsernameFromHref('')).toBeNull();
+  });
+});
+
+describe('isNotFoundScenario', () => {
+  it('true on title exactly "Game not found" with no nav error', () => {
+    expect(isNotFoundScenario('Game not found', false)).toBe(true);
+  });
+  it('false on a real page title', () => {
+    expect(isNotFoundScenario('Hades — Backloggd', false)).toBe(false);
+  });
+  it('false when navigation errored (transient, not a real 404)', () => {
+    expect(isNotFoundScenario('Game not found', true)).toBe(false);
+  });
+  it('false on any non-matching title', () => {
+    expect(isNotFoundScenario('Some other page', false)).toBe(false);
   });
 });
