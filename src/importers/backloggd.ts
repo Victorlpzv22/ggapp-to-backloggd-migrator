@@ -280,19 +280,13 @@ async function addGameToLibrary(
       const review = document.getElementById('review') as HTMLTextAreaElement;
       if (review) review.value = text;
     }, game.review);
-    await page.evaluate(() => {
-      const saveBtn = document.querySelector<HTMLElement>('.save-log');
-      saveBtn?.click();
-    });
+    await page.locator('.save-log').click().catch(() => {});
     await page.waitForTimeout(1000);
   }
 }
 
 async function openLogEditor(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const btn = document.querySelector<HTMLElement>('.log-editor-btn');
-    btn?.click();
-  });
+  await page.locator('.log-editor-btn').click().catch(() => {});
   await page.waitForTimeout(1500);
 }
 
@@ -324,10 +318,7 @@ async function updateGameOnPage(
   };
   const checkboxId = typeMap[status];
   if (checkboxId) {
-    await page.evaluate((id: string) => {
-      const toggle = document.getElementById(id) as HTMLInputElement;
-      if (toggle) toggle.checked = true;
-    }, checkboxId);
+    await page.locator(`label[for="${checkboxId}"]`).click({ force: true }).catch(() => {});
   }
 
   if (status === 'paused' || status === 'dropped') {
@@ -347,10 +338,7 @@ async function updateGameOnPage(
     await page.waitForTimeout(500);
   }
 
-  await page.evaluate(() => {
-    const saveBtn = document.querySelector<HTMLElement>('.save-log');
-    saveBtn?.click();
-  });
+  await page.locator('.save-log').click().catch(() => {});
   await page.waitForTimeout(1000);
 }
 
