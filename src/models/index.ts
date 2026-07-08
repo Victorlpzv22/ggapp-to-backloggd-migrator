@@ -1,19 +1,18 @@
+/**
+ * GGApp play statuses.
+ *
+ * `Wishlist` is **synthetic**: GGApp itself has no "Wishlist" play status.
+ * It is used for:
+ *   (a) authenticated wishlist games fetched via the auth-only `wishlistGames` query, and
+ *   (b) games with status id 0 (DEFAULT / no play status) collected from
+ *       `listGamesForStatuses(statusIds: [0])`.
+ *
+ * Both map to Backloggd `backlog` via `mapStatus` in src/mappers/states.ts.
+ */
 export type GGAppStatus =
-  | 'Want to Play'
-  | 'Playing'
-  | 'Beaten'
-  | 'Completed'
-  | 'Shelved'
-  | 'Abandoned'
-  | 'Wishlist';
+  'Want to Play' | 'Playing' | 'Beaten' | 'Completed' | 'Shelved' | 'Abandoned' | 'Wishlist';
 
-export type BackloggdStatus =
-  | 'playing'
-  | 'played'
-  | 'dropped'
-  | 'backlog'
-  | 'paused'
-  | 'wishlist';
+export type BackloggdStatus = 'playing' | 'played' | 'dropped' | 'backlog' | 'paused' | 'wishlist';
 
 export type ConflictPolicy = 'skip' | 'merge' | 'overwrite' | 'ask';
 

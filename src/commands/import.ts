@@ -6,8 +6,7 @@ import { loginBackloggd, importGames } from '../importers/backloggd.js';
 import * as logger from '../utils/logger.js';
 import { type GGAppData, type ConflictPolicy } from '../models/index.js';
 import { loadConfig } from '../utils/config.js';
-
-const BACKLOGGD_BASE = 'https://backloggd.com';
+import { BACKLOGGD_BASE } from '../constants.js';
 
 export async function importCommand(options: {
   throttle?: string;
@@ -18,14 +17,16 @@ export async function importCommand(options: {
   onConflict?: string;
 }) {
   const config = loadConfig(options.config);
-  const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as 'slow' | 'normal' | 'fast';
+  const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as
+    'slow' | 'normal' | 'fast';
   const sessionDir = options.sessionDir ?? config.sessionDir ?? 'sessions';
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
-  const conflictPolicy = (options.onConflict ?? config.defaultConflictPolicy ?? 'skip') as ConflictPolicy;
+  const conflictPolicy = (options.onConflict ??
+    config.defaultConflictPolicy ??
+    'skip') as ConflictPolicy;
 
   if (!fs.existsSync(dataFile)) {
-    logger.error(`Data file not found: ${dataFile}. Run extract first.`);
-    process.exit(1);
+    throw new Error(`Data file not found: ${dataFile}. Run extract first.`);
   }
 
   const raw = fs.readFileSync(dataFile, 'utf-8');
@@ -96,7 +97,9 @@ export async function importCommand(options: {
     }
 
     logger.success('Import completed');
-    logger.info(`Total: ${report.totalGames} | Imported: ${report.successfullyImported} | Skipped: ${report.skipped} | Not found: ${report.notFound} | Errors: ${report.errors}`);
+    logger.info(
+      `Total: ${report.totalGames} | Imported: ${report.successfullyImported} | Skipped: ${report.skipped} | Not found: ${report.notFound} | Errors: ${report.errors}`,
+    );
   } finally {
     await browser.close();
   }

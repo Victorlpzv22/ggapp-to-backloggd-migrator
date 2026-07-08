@@ -7,13 +7,13 @@ import { loginBackloggd, importGames } from '../importers/backloggd.js';
 import * as logger from '../utils/logger.js';
 import { type GGAppData, type ConflictPolicy } from '../models/index.js';
 import { loadConfig } from '../utils/config.js';
-
-const BACKLOGGD_BASE = 'https://backloggd.com';
+import { BACKLOGGD_BASE } from '../constants.js';
 
 export async function migrateCommand(options: {
   username: string;
   throttle?: string;
   headless?: boolean;
+  ggappHeadless?: boolean;
   sessionDir?: string;
   dataFile?: string;
   config?: string;
@@ -21,15 +21,34 @@ export async function migrateCommand(options: {
   direct?: boolean;
 }) {
   const config = loadConfig(options.config);
-  const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as 'slow' | 'normal' | 'fast';
+  const throttleSpeed = (options.throttle ?? config.throttle ?? 'normal') as
+    'slow' | 'normal' | 'fast';
   const sessionDir = options.sessionDir ?? config.sessionDir ?? 'sessions';
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
-  const conflictPolicy = (options.onConflict ?? config.defaultConflictPolicy ?? 'skip') as ConflictPolicy;
+  const conflictPolicy = (options.onConflict ??
+    config.defaultConflictPolicy ??
+    'skip') as ConflictPolicy;
   const direct = options.direct ?? false;
+  const ggappHeadless = options.ggappHeadless ?? true;
 
   // --- Phase 1: Extract (API-based, no Playwright) ---
   logger.info(`Extracting data for GGApp user "${options.username}"...`);
-  const games = await extractGGAppData(options.username);
+  const backloggdSessionPath = sessionExists('backloggd', sessionDir)
+    ? path.join(sessionDir, 'backloggd.json')
+    : undefined;
+  const ggappSessionExists = sessionExists('ggapp', sessionDir);
+  const headless = backloggdSessionPath ? (options.headless ?? config.headless ?? true) : false;
+
+  // Reuse a single browser/context for both the GGApp wishlist pass (when a
+  // saved session exists) and the Backloggd import. Avoids the cost of a
+  // second chromium launch for --direct.
+  const browser = await chromium.launch({ headless });
+  const context = await browser.newContext({ storageState: backloggdSessionPath });
+  const games = await extractGGAppData(
+    options.username,
+    ggappHeadless,
+    ggappSessionExists ? context : undefined,
+  );
 
   if (!direct) {
     const dir = path.dirname(dataFile);
@@ -42,16 +61,6 @@ export async function migrateCommand(options: {
   }
 
   // --- Phase 2: Import (Playwright for Backloggd) ---
-  const backloggdSessionPath = sessionExists('backloggd', sessionDir)
-    ? path.join(sessionDir, 'backloggd.json')
-    : undefined;
-
-  // Force visible browser for login if no session exists
-  const headless = backloggdSessionPath ? (options.headless ?? config.headless ?? true) : false;
-
-  const browser = await chromium.launch({ headless });
-  const context = await browser.newContext({ storageState: backloggdSessionPath });
-
   try {
     const page = await context.newPage();
 
@@ -85,7 +94,9 @@ export async function migrateCommand(options: {
     }
 
     logger.success('Migration completed');
-    logger.info(`Total: ${report.totalGames} | Imported: ${report.successfullyImported} | Skipped: ${report.skipped} | Not found: ${report.notFound} | Errors: ${report.errors}`);
+    logger.info(
+      `Total: ${report.totalGames} | Imported: ${report.successfullyImported} | Skipped: ${report.skipped} | Not found: ${report.notFound} | Errors: ${report.errors}`,
+    );
   } finally {
     await browser.close();
   }
