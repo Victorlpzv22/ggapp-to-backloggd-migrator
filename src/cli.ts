@@ -57,6 +57,7 @@ program
   .description('Extract and import in one go')
   .argument('<username>', 'GGApp username')
   .option('--headless <bool>', 'Run browser without UI', 'true')
+  .option('--ggapp-headless <bool>', 'Run GGApp browser without UI for wishlist', 'true')
   .option('--throttle <speed>', 'slow|normal|fast', 'normal')
   .option('--session-dir <dir>', 'Session directory', 'sessions')
   .option('--data-file <path>', 'Output/Input JSON file', 'data/ggapp-data.json')
@@ -68,6 +69,7 @@ program
       username,
       throttle: opts.throttle,
       headless: opts.headless === 'true',
+      ggappHeadless: opts.ggappHeadless === 'true',
       sessionDir: opts.sessionDir,
       dataFile: opts.dataFile,
       config: opts.config,

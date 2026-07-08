@@ -13,6 +13,7 @@ export async function migrateCommand(options: {
   username: string;
   throttle?: string;
   headless?: boolean;
+  ggappHeadless?: boolean;
   sessionDir?: string;
   dataFile?: string;
   config?: string;
@@ -25,10 +26,11 @@ export async function migrateCommand(options: {
   const dataFile = options.dataFile ?? 'data/ggapp-data.json';
   const conflictPolicy = (options.onConflict ?? config.defaultConflictPolicy ?? 'skip') as ConflictPolicy;
   const direct = options.direct ?? false;
+  const ggappHeadless = options.ggappHeadless ?? true;
 
   // --- Phase 1: Extract (API-based, no Playwright) ---
   logger.info(`Extracting data for GGApp user "${options.username}"...`);
-  const games = await extractGGAppData(options.username);
+  const games = await extractGGAppData(options.username, ggappHeadless);
 
   if (!direct) {
     const dir = path.dirname(dataFile);
