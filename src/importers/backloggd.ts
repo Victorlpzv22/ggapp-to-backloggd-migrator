@@ -9,6 +9,7 @@ import {
   buildSlugVariants, normalizeForSearch, normalizeForMatch,
   normalizeForMatchExtended, slugToDisplayName,
 } from '../utils/slug.js';
+import { rankLinkMatch } from '../utils/list-match.js';
 
 const PLAY_TYPE_LABEL: Record<string, string> = {
   played: 'Played',
@@ -193,30 +194,14 @@ async function navigateToGamePage(page: Page, url: string): Promise<boolean> {
 
 async function findExactGameLink(page: Page, title: string): Promise<string | null> {
   const queryNorm = normalizeForMatchExtended(title);
-  return page.evaluate((searchQ: string) => {
-    const links = document.querySelectorAll<HTMLAnchorElement>('a[href*="/games/"]');
-    let exact: string | null = null;
-    let prefix: string | null = null;
-
-    for (const link of links) {
-      const raw = link.textContent?.trim() ?? '';
-      if (!raw) continue;
-      const linkN = raw
-        .toLowerCase()
-        .replace(/[™®©]/g, '')
-        .replace(/[''`´]/g, "'")
-        .replace(/[^\w\s-]/g, ' ')
-        .replace(/[-_\s]+/g, ' ')
-        .trim();
-      if (linkN === searchQ) {
-        return link.href;
-      }
-      if (!prefix && linkN.startsWith(searchQ)) {
-        prefix = link.href;
-      }
-    }
-    return prefix;
-  }, queryNorm);
+  const links = await page.evaluate<Array<{ raw: string; href: string }>>(() => {
+    return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/games/"]'))
+      .map((l) => ({ raw: l.textContent?.trim() ?? '', href: l.href }))
+      .filter((l) => l.raw.length > 0);
+  });
+  const exact = links.find((l) => rankLinkMatch(l.raw, queryNorm) === 'exact')?.href;
+  if (exact) return exact;
+  return links.find((l) => rankLinkMatch(l.raw, queryNorm) === 'prefix')?.href ?? null;
 }
 
 async function isInLibrary(page: Page): Promise<boolean> {
