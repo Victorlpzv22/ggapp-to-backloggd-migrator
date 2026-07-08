@@ -16,7 +16,9 @@ export function loadConfig(configPath?: string): MigratorConfig {
     info(`Loaded config from ${filePath}`);
     return config;
   } catch (err) {
-    warn(`Could not parse config from ${filePath}: ${err instanceof Error ? err.message : String(err)}. Using defaults.`);
+    warn(
+      `Could not parse config from ${filePath}: ${err instanceof Error ? err.message : String(err)}. Using defaults.`,
+    );
     return {};
   }
 }

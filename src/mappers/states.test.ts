@@ -36,7 +36,9 @@ describe('mapStatus', () => {
   });
 
   it('should fall back to default for unmapped status', () => {
-    const customMapping = { Playing: 'backlog' as const } as Partial<Record<import('../models/index.js').GGAppStatus, import('../models/index.js').BackloggdStatus>>;
+    const customMapping = { Playing: 'backlog' as const } as Partial<
+      Record<import('../models/index.js').GGAppStatus, import('../models/index.js').BackloggdStatus>
+    >;
     expect(mapStatus('Beaten', customMapping)).toBe('played');
   });
 });

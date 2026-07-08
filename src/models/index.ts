@@ -10,21 +10,9 @@
  * Both map to Backloggd `backlog` via `mapStatus` in src/mappers/states.ts.
  */
 export type GGAppStatus =
-  | 'Want to Play'
-  | 'Playing'
-  | 'Beaten'
-  | 'Completed'
-  | 'Shelved'
-  | 'Abandoned'
-  | 'Wishlist';
+  'Want to Play' | 'Playing' | 'Beaten' | 'Completed' | 'Shelved' | 'Abandoned' | 'Wishlist';
 
-export type BackloggdStatus =
-  | 'playing'
-  | 'played'
-  | 'dropped'
-  | 'backlog'
-  | 'paused'
-  | 'wishlist';
+export type BackloggdStatus = 'playing' | 'played' | 'dropped' | 'backlog' | 'paused' | 'wishlist';
 
 export type ConflictPolicy = 'skip' | 'merge' | 'overwrite' | 'ask';
 

@@ -1,13 +1,22 @@
 import { type Page, type BrowserContext } from 'playwright';
-import { type Game, type BackloggdStatus, type ConflictPolicy, type ImportReport, type GGAppStatus } from '../models/index.js';
+import {
+  type Game,
+  type BackloggdStatus,
+  type ConflictPolicy,
+  type ImportReport,
+  type GGAppStatus,
+} from '../models/index.js';
 import { mapStatus } from '../mappers/states.js';
 import * as logger from '../utils/logger.js';
 import { wait } from '../utils/throttle.js';
 import { BACKLOGGD_BASE } from '../constants.js';
 
 import {
-  buildSlugVariants, normalizeForSearch, normalizeForMatch,
-  normalizeForMatchExtended, slugToDisplayName,
+  buildSlugVariants,
+  normalizeForSearch,
+  normalizeForMatch,
+  normalizeForMatchExtended,
+  slugToDisplayName,
 } from '../utils/slug.js';
 import { rankLinkMatch } from '../utils/list-match.js';
 
@@ -18,14 +27,15 @@ const PLAY_TYPE_LABEL: Record<string, string> = {
 };
 
 export async function loginBackloggd(page: Page): Promise<void> {
-  await page.goto(`${BACKLOGGD_BASE}/users/sign_in`, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+  await page
+    .goto(`${BACKLOGGD_BASE}/users/sign_in`, { waitUntil: 'domcontentloaded', timeout: 15000 })
+    .catch(() => {});
   logger.info('Please log in to Backloggd in the browser window.');
   logger.info('Waiting for login to complete...');
 
-  await page.waitForFunction(
-    () => !window.location.pathname.startsWith('/users/sign_in'),
-    { timeout: 0 },
-  );
+  await page.waitForFunction(() => !window.location.pathname.startsWith('/users/sign_in'), {
+    timeout: 0,
+  });
   await page.waitForTimeout(2000);
   logger.success('Backloggd login detected');
 }
@@ -169,7 +179,9 @@ export async function importGames(
       }
       report.successfullyImported++;
     } catch (err) {
-      logger.error(`Error processing ${game.title}: ${err instanceof Error ? err.message : String(err)}`);
+      logger.error(
+        `Error processing ${game.title}: ${err instanceof Error ? err.message : String(err)}`,
+      );
       report.errors++;
     }
   }
@@ -218,11 +230,7 @@ async function setRatingOnPage(page: Page, rating: number): Promise<void> {
   }, rating);
 }
 
-async function addGameToLibrary(
-  page: Page,
-  game: Game,
-  status: BackloggdStatus,
-): Promise<void> {
+async function addGameToLibrary(page: Page, game: Game, status: BackloggdStatus): Promise<void> {
   const needsModal = status === 'played' || status === 'paused' || status === 'dropped';
 
   if (needsModal) {
@@ -265,21 +273,23 @@ async function addGameToLibrary(
       const review = document.getElementById('review') as HTMLTextAreaElement;
       if (review) review.value = text;
     }, game.review);
-    await page.locator('.save-log').click().catch(() => {});
+    await page
+      .locator('.save-log')
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(1000);
   }
 }
 
 async function openLogEditor(page: Page): Promise<void> {
-  await page.locator('.log-editor-btn').click().catch(() => {});
+  await page
+    .locator('.log-editor-btn')
+    .click()
+    .catch(() => {});
   await page.waitForTimeout(1500);
 }
 
-async function updateGameOnPage(
-  page: Page,
-  game: Game,
-  status: BackloggdStatus,
-): Promise<void> {
+async function updateGameOnPage(page: Page, game: Game, status: BackloggdStatus): Promise<void> {
   await openLogEditor(page);
 
   if (game.rating) {
@@ -303,7 +313,10 @@ async function updateGameOnPage(
   };
   const checkboxId = typeMap[status];
   if (checkboxId) {
-    await page.locator(`label[for="${checkboxId}"]`).click({ force: true }).catch(() => {});
+    await page
+      .locator(`label[for="${checkboxId}"]`)
+      .click({ force: true })
+      .catch(() => {});
   }
 
   if (status === 'paused' || status === 'dropped') {
@@ -323,7 +336,10 @@ async function updateGameOnPage(
     await page.waitForTimeout(500);
   }
 
-  await page.locator('.save-log').click().catch(() => {});
+  await page
+    .locator('.save-log')
+    .click()
+    .catch(() => {});
   await page.waitForTimeout(1000);
 }
 
@@ -346,21 +362,27 @@ async function syncGameLists(
     return;
   }
   await addBtn.click();
-  await page.waitForFunction(() => {
-    const c = document.getElementById('list-container');
-    return c && c.querySelectorAll('input.list-checkbox').length > 0;
-  }, { timeout: 8000 }).catch(() => logger.info('  TIMEOUT waiting for list checkboxes'));
+  await page
+    .waitForFunction(
+      () => {
+        const c = document.getElementById('list-container');
+        return c && c.querySelectorAll('input.list-checkbox').length > 0;
+      },
+      { timeout: 8000 },
+    )
+    .catch(() => logger.info('  TIMEOUT waiting for list checkboxes'));
   await page.waitForTimeout(500);
 
   const listsInModal = await page.evaluate(() => {
     const container = document.getElementById('list-container');
     if (!container) return [];
     const items = container.querySelectorAll<HTMLInputElement>('input.list-checkbox');
-    return Array.from(items).map(cb => {
+    return Array.from(items).map((cb) => {
       const label = container.querySelector<HTMLElement>(`label[for="${cb.id}"]`);
       const link = label?.querySelector<HTMLAnchorElement>('a[href*="/list/"]');
       const slug = link?.getAttribute('href')?.split('/list/')[1]?.replace('/', '');
-      const title = label?.querySelector<HTMLElement>('[class*="title"]')?.textContent?.trim() || '';
+      const title =
+        label?.querySelector<HTMLElement>('[class*="title"]')?.textContent?.trim() || '';
       return { id: cb.id, checked: cb.checked, slug, title };
     });
   });
@@ -375,15 +397,15 @@ async function syncGameLists(
       continue;
     }
 
-    let checkbox = listsInModal.find(l => l.slug === backloggdSlug);
+    let checkbox = listsInModal.find((l) => l.slug === backloggdSlug);
     if (!checkbox) {
       const normalizedTarget = normalizeForMatch(listName);
-      checkbox = listsInModal.find(l => normalizeForMatch(l.title) === normalizedTarget);
+      checkbox = listsInModal.find((l) => normalizeForMatch(l.title) === normalizedTarget);
       if (checkbox) {
         logger.info(`  Matched "${listName}" by title → slug "${checkbox.slug}"`);
       }
     }
-    
+
     if (!checkbox) {
       logger.info(`  Checkbox not found for "${listName}" (slug "${backloggdSlug}")`);
       continue;
@@ -414,7 +436,9 @@ export function isNotFoundScenario(pageTitle: string, navError: boolean): boolea
 async function getUsername(page: Page): Promise<string> {
   const hrefs = await page.evaluate<string[]>(() => {
     const links = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>('nav a[href*="/u/"], .dropdown-item[href*="/u/"]'),
+      document.querySelectorAll<HTMLAnchorElement>(
+        'nav a[href*="/u/"], .dropdown-item[href*="/u/"]',
+      ),
     );
     return links.map((l) => l.getAttribute('href') || '').filter(Boolean);
   });
@@ -425,8 +449,14 @@ async function getUsername(page: Page): Promise<string> {
   throw new Error('Could not detect Backloggd username from navbar. Are you logged in?');
 }
 
-async function createBackloggdList(page: Page, username: string, displayName: string): Promise<string> {
-  await page.goto(`${BACKLOGGD_BASE}/u/${username}/lists/`, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+async function createBackloggdList(
+  page: Page,
+  username: string,
+  displayName: string,
+): Promise<string> {
+  await page
+    .goto(`${BACKLOGGD_BASE}/u/${username}/lists/`, { waitUntil: 'load', timeout: 15000 })
+    .catch(() => {});
   await page.waitForTimeout(1000);
 
   const listBtn = page.locator('button', { hasText: 'Create List' }).first();
@@ -450,35 +480,48 @@ async function createBackloggdList(page: Page, username: string, displayName: st
   return displayName.toLowerCase().replace(/\s+/g, '-');
 }
 
-async function fetchAllExistingListSlugs(page: Page, username: string): Promise<Map<string, string>> {
-  await page.goto(`${BACKLOGGD_BASE}/u/${username}/lists/`, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+async function fetchAllExistingListSlugs(
+  page: Page,
+  username: string,
+): Promise<Map<string, string>> {
+  await page
+    .goto(`${BACKLOGGD_BASE}/u/${username}/lists/`, { waitUntil: 'load', timeout: 15000 })
+    .catch(() => {});
   await page.waitForTimeout(1000);
 
-  return page.evaluate(() => {
-    const results: Array<[string, string]> = [];
-    const seen = new Set<string>();
-    const links = document.querySelectorAll<HTMLAnchorElement>('a.secondary-link[href*="/list/"]');
-    for (const link of links) {
-      const href = link.getAttribute('href') || '';
-      const m = href.match(/\/list\/([^/]+)\/?/);
-      if (!m) continue;
-      const slug = m[1];
-      if (seen.has(slug)) continue;
-      seen.add(slug);
-      const text = link.textContent?.trim() || slug;
-      results.push([text, slug]);
-    }
-    return results;
-  }).then((raw: Array<[string, string]>) => {
-    const map = new Map<string, string>();
-    for (const [title, slug] of raw) {
-      map.set(normalizeForMatch(title), slug);
-    }
-    return map;
-  });
+  return page
+    .evaluate(() => {
+      const results: Array<[string, string]> = [];
+      const seen = new Set<string>();
+      const links = document.querySelectorAll<HTMLAnchorElement>(
+        'a.secondary-link[href*="/list/"]',
+      );
+      for (const link of links) {
+        const href = link.getAttribute('href') || '';
+        const m = href.match(/\/list\/([^/]+)\/?/);
+        if (!m) continue;
+        const slug = m[1];
+        if (seen.has(slug)) continue;
+        seen.add(slug);
+        const text = link.textContent?.trim() || slug;
+        results.push([text, slug]);
+      }
+      return results;
+    })
+    .then((raw: Array<[string, string]>) => {
+      const map = new Map<string, string>();
+      for (const [title, slug] of raw) {
+        map.set(normalizeForMatch(title), slug);
+      }
+      return map;
+    });
 }
 
-async function ensureListsExist(page: Page, username: string, games: Game[]): Promise<Map<string, string>> {
+async function ensureListsExist(
+  page: Page,
+  username: string,
+  games: Game[],
+): Promise<Map<string, string>> {
   const allGGAppListNames = [...new Set(games.flatMap((g) => g.lists || []))].sort();
   if (allGGAppListNames.length === 0) return new Map();
 

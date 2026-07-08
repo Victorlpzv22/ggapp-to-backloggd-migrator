@@ -1,18 +1,37 @@
 export function slugToDisplayName(slug: string): string {
   return slug
     .split('-')
-    .map((w) => (['and', 'in', 'a', 'an', 'of', 'to', 'for', 'the', 'i'].includes(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .map((w) =>
+      ['and', 'in', 'a', 'an', 'of', 'to', 'for', 'the', 'i'].includes(w)
+        ? w
+        : w.charAt(0).toUpperCase() + w.slice(1),
+    )
     .join(' ');
 }
 
 export function normalizeForMatch(name: string): string {
-  return [...new Set(
-    name.toLowerCase().replace(/[-_\s]+/g, ' ').split(' ').filter(Boolean)
-  )].sort().join(' ');
+  return [
+    ...new Set(
+      name
+        .toLowerCase()
+        .replace(/[-_\s]+/g, ' ')
+        .split(' ')
+        .filter(Boolean),
+    ),
+  ]
+    .sort()
+    .join(' ');
 }
 
 export const ROMAN_TO_ARABIC: Record<string, string> = {
-  ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9',
+  ii: '2',
+  iii: '3',
+  iv: '4',
+  v: '5',
+  vi: '6',
+  vii: '7',
+  viii: '8',
+  ix: '9',
 };
 
 export function stripTrademarks(s: string): string {
@@ -56,7 +75,8 @@ export function buildSlugVariants(title: string, originalSlug?: string): string[
   const clean = buildCleanSlug(title);
   const noApos = buildCleanSlug(title, true);
 
-  if (originalSlug && originalSlug !== clean && originalSlug !== noApos) variants.push(originalSlug);
+  if (originalSlug && originalSlug !== clean && originalSlug !== noApos)
+    variants.push(originalSlug);
   if (clean && !variants.includes(clean)) variants.push(clean);
   if (noApos !== clean && noApos && !variants.includes(noApos)) variants.push(noApos);
 

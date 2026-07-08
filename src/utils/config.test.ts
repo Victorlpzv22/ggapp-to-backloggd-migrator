@@ -32,9 +32,7 @@ describe('loadConfig', () => {
   });
 
   it('should return empty config if file does not exist', () => {
-    const config = loadConfig(
-      path.join(os.tmpdir(), `migrator-nonexistent-${Math.random()}.json`),
-    );
+    const config = loadConfig(path.join(os.tmpdir(), `migrator-nonexistent-${Math.random()}.json`));
     expect(config).toEqual({});
   });
 
