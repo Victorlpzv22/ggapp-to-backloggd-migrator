@@ -30,7 +30,22 @@ export async function migrateCommand(options: {
 
   // --- Phase 1: Extract (API-based, no Playwright) ---
   logger.info(`Extracting data for GGApp user "${options.username}"...`);
-  const games = await extractGGAppData(options.username, ggappHeadless);
+  const backloggdSessionPath = sessionExists('backloggd', sessionDir)
+    ? path.join(sessionDir, 'backloggd.json')
+    : undefined;
+  const ggappSessionExists = sessionExists('ggapp', sessionDir);
+  const headless = backloggdSessionPath ? (options.headless ?? config.headless ?? true) : false;
+
+  // Reuse a single browser/context for both the GGApp wishlist pass (when a
+  // saved session exists) and the Backloggd import. Avoids the cost of a
+  // second chromium launch for --direct.
+  const browser = await chromium.launch({ headless });
+  const context = await browser.newContext({ storageState: backloggdSessionPath });
+  const games = await extractGGAppData(
+    options.username,
+    ggappHeadless,
+    ggappSessionExists ? context : undefined,
+  );
 
   if (!direct) {
     const dir = path.dirname(dataFile);
@@ -43,16 +58,6 @@ export async function migrateCommand(options: {
   }
 
   // --- Phase 2: Import (Playwright for Backloggd) ---
-  const backloggdSessionPath = sessionExists('backloggd', sessionDir)
-    ? path.join(sessionDir, 'backloggd.json')
-    : undefined;
-
-  // Force visible browser for login if no session exists
-  const headless = backloggdSessionPath ? (options.headless ?? config.headless ?? true) : false;
-
-  const browser = await chromium.launch({ headless });
-  const context = await browser.newContext({ storageState: backloggdSessionPath });
-
   try {
     const page = await context.newPage();
 

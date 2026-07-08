@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium, type BrowserContext } from 'playwright';
 import { type Game, type GGAppStatus } from '../models/index.js';
 import * as logger from '../utils/logger.js';
 import { saveSession, sessionExists } from '../utils/session.js';
@@ -73,14 +73,24 @@ export async function loginGGApp(): Promise<void> {
 }
 
 /** Get wishlist game IDs from authenticated session */
-async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<number, { name: string; slug: string }>> {
+async function fetchWishlistIds(
+  userId: number,
+  headless: boolean,
+  existingContext?: BrowserContext,
+): Promise<Map<number, { name: string; slug: string }>> {
   if (!sessionExists(SITE_NAME)) {
     logger.warn('No saved GGApp session found. Run login first with: npm run login');
     return new Map();
   }
 
-  const browser = await chromium.launch({ headless, args: ['--no-sandbox'] });
-  const context = await browser.newContext({ storageState: `sessions/${SITE_NAME}.json` });
+  let browser: import('playwright').Browser | null = null;
+  let context: BrowserContext;
+  if (existingContext) {
+    context = existingContext;
+  } else {
+    browser = await chromium.launch({ headless, args: ['--no-sandbox'] });
+    context = await browser.newContext({ storageState: `sessions/${SITE_NAME}.json` });
+  }
   const page = await context.newPage();
 
   try {
@@ -101,19 +111,19 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
       // First get total count
       const countResp = await fetch('https://api.ggapp.io/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           query: `query wishlistGamesCount($userId: Int) { wishlistGamesCount(userId: $userId) }`,
           variables: { userId: uid },
         }),
       });
-      const countData = await countResp.json() as { data?: { wishlistGamesCount: number } };
+      const countData = (await countResp.json()) as { data?: { wishlistGamesCount: number } };
       const total = countData?.data?.wishlistGamesCount || 0;
 
       // Fetch all wishlist games (max 1000)
       const resp = await fetch('https://api.ggapp.io/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           query: `query wishlistGames($filter: WishlistFilter, $order: WishlistOrder, $limit: Int, $offset: Int) {
             wishlistGames(filter: $filter, order: $order, limit: $limit, offset: $offset) {
@@ -128,7 +138,7 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
           },
         }),
       });
-      const data = await resp.json() as { data?: { wishlistGames?: Array<{ game: { id: number; name: string; slug: string } }> } };
+      const data = (await resp.json()) as { data?: { wishlistGames?: Array<{ game: { id: number; name: string; slug: string } }> } };
       const games = data?.data?.wishlistGames || [];
       return {
         total,
@@ -148,7 +158,7 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
     logger.warn(`Could not fetch wishlist: ${err instanceof Error ? err.message : String(err)}`);
     return new Map();
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
 }
 
@@ -160,6 +170,7 @@ async function fetchWishlistIds(userId: number, headless: boolean): Promise<Map<
 export async function extractGGAppData(
   username: string,
   headless = true,
+  context?: BrowserContext,
 ): Promise<Game[]> {
   // Step 1: Get user ID
   logger.info(`Fetching user info for "${username}"...`);
@@ -240,7 +251,7 @@ export async function extractGGAppData(
   }
 
   // Step 4: Cross-reference with authenticated wishlist (if session exists)
-  const wishlistGames = await fetchWishlistIds(userId, headless);
+  const wishlistGames = await fetchWishlistIds(userId, headless, context);
   if (wishlistGames.size > 0) {
     let added = 0;
     for (const [id, info] of wishlistGames) {
