@@ -90,6 +90,11 @@ npm run import -- --data-file data/not-found.json
 
 The importer accepts the compact `{title, status, lists}[]` format used by `not-found.json` in addition to the full extraction format.
 
+> **`not-found.json` vs `not-found-importable.json`**
+>
+> - `data/not-found.json` contains only `{ title, status, lists }`. Re-importing it works, but every game falls back to **title search** on Backloggd (slug fields are absent).
+> - `data/not-found-importable.json` is produced by `scripts/build-importable-not-found.ts` and **enriches** each not-found entry with `gameId`, `token`, `slug`, and `_slugVariants` from `ggapp-data.json` so the importer can retry the slug-based path. Prefer this file for re-runs after fixing the original extraction.
+
 ### All in one
 
 ```bash
