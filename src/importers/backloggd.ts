@@ -168,7 +168,7 @@ export async function importGames(
       }
       report.successfullyImported++;
     } catch (err) {
-      logger.error(`Error processing ${game.title}: ${err}`);
+      logger.error(`Error processing ${game.title}: ${err instanceof Error ? err.message : String(err)}`);
       report.errors++;
     }
   }
