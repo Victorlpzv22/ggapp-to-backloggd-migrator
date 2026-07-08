@@ -235,6 +235,7 @@ export async function extractGGAppData(
       if (!games.some((g) => g.gameId === entry.game.id)) {
         games.push({
           title: entry.game.name,
+          // Synthetic 'Wishlist' label for DEFAULT(0) games — see models/index.ts. Maps to backlog.
           status: 'Wishlist' as GGAppStatus,
           rating: undefined,
           review: undefined,
